@@ -1,4 +1,5 @@
 /** Panneaux : fin de partie, boutique, mini-tuto. DOM construit sans innerHTML (aucun texte non fiable). */
+import { keepScroll } from './scroll';
 import { MAX_LEVEL, VERSION } from './config';
 import { paintIcon, paintOutfit } from './draw';
 import type { SaveData } from './save';
@@ -126,7 +127,7 @@ export function shopPanel(save: SaveData, onChange: () => void, onClose: () => v
   const tabDefs: { id: Tab; label: string }[] = [{ id: 'up', label: 'Améliorations' }, ...SHELVES];
   let tab: Tab = 'up';
 
-  const render = () => {
+  const paint = (bought?: string) => {
     coins.replaceChildren(icon('fish', 'fish', 22), el('b', '', String(save.coins)));
     for (const b of Array.from(tabs.children)) {
       const on = (b as HTMLElement).dataset.tab === tab;
@@ -134,6 +135,7 @@ export function shopPanel(save: SaveData, onChange: () => void, onClose: () => v
       b.className = 'tab btn !min-h-11 !px-2 !text-base ' + (on ? 'btn-sun' : 'btn-ice');
     }
     list.replaceChildren();
+    let pop: HTMLElement | null = null;
     if (tab === 'up') {
       for (const u of UPGRADES) {
         const lvl = save.up[u.id];
@@ -146,13 +148,14 @@ export function shopPanel(save: SaveData, onChange: () => void, onClose: () => v
           btn.append(el('span', '', 'Améliorer'), fishCost(cost));
           btn.disabled = save.coins < cost;
           btn.addEventListener('click', () => {
-            if (buyUpgrade(save, u.id) === 'ok') { sfx.buy(); onChange(); render(); } else sfx.no();
+            if (buyUpgrade(save, u.id) === 'ok') { sfx.buy(); onChange(); render(false, u.id); } else sfx.no();
           });
         }
         const pips = el('span', 'flex gap-1');
         for (let i = 0; i < MAX_LEVEL; i++) pips.append(el('i', 'h-3 w-5 rounded-full border-2 border-ink ' + (i < lvl ? 'bg-orange' : 'bg-white')));
         const li = row(icon('upgrade', u.id, 60), u.name, u.desc, btn, pips);
-        if (u.id === highlight) { li.classList.add('!bg-sun'); queueMicrotask(() => li.scrollIntoView({ block: 'nearest' })); }
+        if (u.id === highlight) { li.classList.add('!bg-sun'); if (!bought) queueMicrotask(() => li.scrollIntoView({ block: 'nearest' })); }
+        if (u.id === bought) pop = li;
         list.append(li);
       }
     } else {
@@ -164,15 +167,29 @@ export function shopPanel(save: SaveData, onChange: () => void, onClose: () => v
         if (worn) { btn.textContent = 'Porté'; btn.disabled = true; }
         else if (owned) {
           btn.textContent = 'Porter';
-          btn.addEventListener('click', () => { equip(save, c.id); sfx.buy(); onChange(); render(); });
+          btn.addEventListener('click', () => { equip(save, c.id); sfx.buy(); onChange(); render(false, c.id); });
         } else {
           btn.append(el('span', '', 'Acheter'), fishCost(c.price));
           btn.disabled = save.coins < c.price;
           btn.addEventListener('click', () => {
-            if (buy(save, c.id) === 'ok') { sfx.buy(); onChange(); render(); } else sfx.no();
+            if (buy(save, c.id) === 'ok') { sfx.buy(); onChange(); render(false, c.id); } else sfx.no();
           });
         }
-        list.append(row(icon('item', c.id, 60), c.name, c.desc, btn, el('span', 'inline-block rounded-full border-2 border-ink bg-sun px-2 text-sm font-semibold', rarity(c.price))));
+        const li = row(icon('item', c.id, 60), c.name, c.desc, btn, el('span', 'inline-block rounded-full border-2 border-ink bg-sun px-2 text-sm font-semibold', rarity(c.price)));
+        if (c.id === bought) pop = li;
+        list.append(li);
+      }
+    }
+    return pop;
+  };
+  // le rendu recrée les lignes : on garde la position de défilement et le focus sur la ligne touchée
+  const render = (reset = true, bought?: string) => {
+    let row: HTMLElement | null = null;
+    keepScroll(list, () => { row = paint(bought); }, reset);
+    if (row) {
+      (row as HTMLElement).querySelector('button')?.focus({ preventScroll: true });
+      if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        (row as HTMLElement).animate([{ transform: 'scale(1)' }, { transform: 'scale(1.04)', backgroundColor: '#FFD23F' }, { transform: 'scale(1)' }], { duration: 320, easing: 'ease-out' });
       }
     }
   };
