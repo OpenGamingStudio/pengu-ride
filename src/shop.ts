@@ -1,7 +1,7 @@
 import { MAX_LEVEL } from './config';
 
 export type Shelf = 'hat' | 'scarf' | 'glasses';
-export type UpgradeId = 'power' | 'bounce' | 'magnet';
+export type UpgradeId = 'power' | 'bounce' | 'glide' | 'magnet' | 'fishx';
 
 export interface Cosmetic {
   id: string;
@@ -25,9 +25,11 @@ export const SHELVES: { id: Shelf; label: string }[] = [
 ];
 
 export const UPGRADES: Upgrade[] = [
-  { id: 'power', name: 'Fronde costaude', desc: 'Ton lancer part 10 % plus vite à chaque niveau.', base: 25 },
-  { id: 'bounce', name: 'Rebonds élastiques', desc: 'Les rebonds gardent plus d\'élan et le bon moment dure plus longtemps.', base: 30 },
-  { id: 'magnet', name: 'Aimant à poissons', desc: 'Les poissons viennent à toi de plus loin.', base: 20 },
+  { id: 'power', name: 'Fronde costaude', desc: 'Ton lancer part bien plus fort : +55 % de vitesse par niveau.', base: 5 },
+  { id: 'glide', name: 'Patins givrés', desc: 'Moins de frottement : tu glisses beaucoup plus loin.', base: 6 },
+  { id: 'bounce', name: 'Rebonds élastiques', desc: 'Les rebonds montent plus haut et gardent plus de vitesse.', base: 10 },
+  { id: 'magnet', name: 'Aimant à poissons', desc: 'Les poissons viennent à toi de plus loin.', base: 16 },
+  { id: 'fishx', name: 'Poissons ×', desc: 'Chaque poisson rapporte +30 % par niveau.', base: 22 },
 ];
 
 export const COSMETICS: Cosmetic[] = [
@@ -60,7 +62,7 @@ export function upgradeById(id: string): Upgrade | undefined {
 
 export function upgradeCost(id: UpgradeId, level: number): number {
   const u = upgradeById(id)!;
-  return Math.round(u.base * Math.pow(1.75, level));
+  return Math.round(u.base * Math.pow(1.6, level));
 }
 
 /** Les données dont la boutique a besoin (sous-ensemble de la sauvegarde). */
@@ -97,6 +99,17 @@ export function equip(s: Wallet, id: string): boolean {
   if (!it || !s.owned.includes(id)) return false;
   s.equipped[it.shelf] = id;
   return true;
+}
+
+/** L'amélioration la moins chère encore disponible (pour la barre de progression et le bouton « Améliorer »). */
+export function cheapestUpgrade(s: Wallet): { id: UpgradeId; name: string; cost: number } | null {
+  let best: { id: UpgradeId; name: string; cost: number } | null = null;
+  for (const u of UPGRADES) {
+    if (s.up[u.id] >= MAX_LEVEL) continue;
+    const cost = upgradeCost(u.id, s.up[u.id]);
+    if (!best || cost < best.cost) best = { id: u.id, name: u.name, cost };
+  }
+  return best;
 }
 
 /** Le moins cher des achats encore possibles avec `coins` (pour le message de fin de partie). */

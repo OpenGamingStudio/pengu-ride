@@ -5,7 +5,7 @@ import {
   COL, drawBackdrop, drawBand, drawGround, drawPenguin, drawRing, drawWorld, INK, paintIcon, type Outfit,
 } from './draw';
 import { freshSave, load, write, type Loaded } from './save';
-import { nextAffordable } from './shop';
+import { nextAffordable, type UpgradeId } from './shop';
 import { distance, earned, launch, launchSpeed, newSim, predictBounce, step, tap, window_, type Sim } from './sim';
 import { el, resultPanel, shopPanel, tutoPanel } from './ui';
 
@@ -41,6 +41,8 @@ let aim: { sx: number; sy: number; angle: number; power: number; id: number } | 
 let acc = 0;
 let last = 0;
 let resultTimer = 0;
+let recordShown = false;
+let lastCombo = 0;
 
 let W = 0;
 let H = 0;
@@ -119,12 +121,12 @@ function openTuto(): void {
   }));
 }
 
-function openShop(): void {
+function openShop(highlight: UpgradeId | null = null): void {
   openLayer(shopPanel(save, () => { persist(); refreshHud(); }, () => {
     closeLayer();
     refreshHud();
     if (sim.phase === 'over') startAim();
-  }));
+  }, highlight));
 }
 
 function showResult(): void {
@@ -138,10 +140,10 @@ function showResult(): void {
   persist();
   refreshHud();
   openLayer(resultPanel(
-    { dist, fish: sim.fish, gold: sim.gold, perfects: sim.perfects, record, best: save.best, coins: save.coins },
+    { dist, fish: sim.fish, gold: sim.gold, gained, perfects: sim.perfects, maxCombo: sim.maxCombo, record, best: save.best, coins: save.coins },
     save,
     () => { closeLayer(); startAim(); },
-    () => { openShop(); },
+    (id) => { openShop(id); },
   ));
 }
 
@@ -150,6 +152,10 @@ function startAim(): void {
   particles = [];
   floaters = [];
   aim = null;
+  recordShown = false;
+  lastCombo = 0;
+  $('combo').classList.add('hidden');
+  $('rec').classList.remove('wiggle', '!bg-orange', 'text-white');
   setDock(true);
   $('hint').classList.remove('hidden');
   refreshHud();
@@ -219,7 +225,7 @@ document.addEventListener('keydown', (e) => {
 });
 
 $('b-help').addEventListener('click', openTuto);
-$('b-shop').addEventListener('click', openShop);
+$('b-shop').addEventListener('click', () => openShop());
 $('b-sound').addEventListener('click', () => {
   save.settings.sound = !save.settings.sound;
   setSound(save.settings.sound);
@@ -244,16 +250,17 @@ function handleEvents(): void {
     else if (ev.type === 'bounce') {
       if (ev.kind === 'ice') sfx.thud();
       else if (ev.perfect) {
-        sfx.perfect();
-        burst(ev.x, ev.y + 10, 16, COL.sun, 240);
-        floaters.push({ x: ev.x, y: ev.y + 60, text: 'Parfait !', life: 1, col: COL.sun });
-        if (!reduced.matches) shake = 0.18;
+        const c = Math.min(ev.combo, 12);
+        sfx.perfect(ev.combo);
+        burst(ev.x, ev.y + 10, 16 + c * 4, c >= 5 ? '#E63946' : COL.sun, 240 + c * 20);
+        floaters.push({ x: ev.x, y: ev.y + 60, text: ev.combo > 1 ? 'Parfait ×' + ev.combo + ' !' : 'Parfait !', life: 1, col: c >= 5 ? '#E63946' : COL.sun });
+        if (!reduced.matches) shake = 0.18 + c * 0.02;
       } else {
         sfx.boing();
         burst(ev.x, ev.y + 6, 7, '#FFFFFF', 140);
       }
     } else if (ev.type === 'late') {
-      sfx.perfect();
+      sfx.perfect(sim.combo);
       burst(ev.x, ev.y, 14, COL.sun, 240);
       floaters.push({ x: ev.x, y: ev.y + 60, text: 'Bien joué !', life: 1, col: COL.sun });
     } else if (ev.type === 'fish') {
@@ -306,7 +313,25 @@ function update(dt: number): void {
   shake = Math.max(0, shake - dt);
   if (sim.phase === 'fly') {
     $('fish-n').textContent = String(earned(sim));
-    $('dist').textContent = distance(sim) + ' m';
+    const d = distance(sim);
+    $('dist').textContent = d + ' m';
+    if (sim.combo !== lastCombo) {
+      lastCombo = sim.combo;
+      const cb = $('combo');
+      cb.textContent = 'Combo ×' + sim.combo;
+      cb.classList.toggle('hidden', sim.combo < 2);
+      if (sim.combo >= 2 && !reduced.matches) { cb.classList.remove('wiggle'); void cb.offsetWidth; cb.classList.add('wiggle'); }
+    }
+    if (!recordShown && save.best > 0 && d > save.best) {
+      recordShown = true;
+      sfx.record();
+      burst(sim.x, sim.y + 20, 60, COL.sun, 380);
+      burst(sim.x, sim.y + 20, 30, COL.fish, 300);
+      floaters.push({ x: sim.x, y: sim.y + 90, text: 'NOUVEAU RECORD !', life: 2, col: COL.sun });
+      if (!reduced.matches) shake = 0.5;
+      $('rec').textContent = 'Record battu !';
+      $('rec').classList.add('wiggle', '!bg-orange', 'text-white');
+    }
   }
 }
 

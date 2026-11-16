@@ -5,7 +5,7 @@ import type { UpgradeId } from './shop';
 export type Phase = 'aim' | 'fly' | 'over';
 export type Ev =
   | { type: 'launch' }
-  | { type: 'bounce'; kind: 'seal' | 'berg' | 'ice'; perfect: boolean; x: number; y: number }
+  | { type: 'bounce'; kind: 'seal' | 'berg' | 'ice'; perfect: boolean; x: number; y: number; combo: number }
   | { type: 'late'; x: number; y: number }
   | { type: 'fish'; gold: boolean; x: number; y: number }
   | { type: 'splash'; x: number; y: number }
@@ -25,6 +25,12 @@ export interface Sim {
   gold: number;
   bounces: number;
   perfects: number;
+  /** Rebonds parfaits d'affilée (retombe à 0 sur un rebond raté). */
+  combo: number;
+  /** Détection d'enlisement (collé contre un iceberg, micro-rebonds) : dernier point de progression. */
+  stallX: number;
+  stallT: number;
+  maxCombo: number;
   tapAt: number;
   /** Anti-spam : après un appui, les suivants sont ignorés un court instant. */
   lockUntil: number;
@@ -38,12 +44,15 @@ export function newSim(seed: number, up: Record<UpgradeId, number>): Sim {
   generate(world, 2400);
   return {
     phase: 'aim', x: 0, y: ANCHOR_Y, vx: 0, vy: 0, grounded: false, t: 0, world, up,
-    fish: 0, gold: 0, bounces: 0, perfects: 0, tapAt: -9, lockUntil: 0, late: null, events: [],
+    fish: 0, gold: 0, bounces: 0, perfects: 0, combo: 0, maxCombo: 0, stallX: 0, stallT: 0, tapAt: -9, lockUntil: 0, late: null, events: [],
   };
 }
 
 export const distance = (s: Pick<Sim, 'x'>): number => Math.max(0, Math.floor(s.x / 40));
-export const launchSpeed = (power: number, level: number): number => (440 + 320 * power) * (1 + 0.1 * level);
+export const launchSpeed = (power: number, level: number): number => (330 + 250 * power) * (1 + 0.55 * level);
+/** Frottement : chaque niveau de glisse garde plus de vitesse (au sol et dans l'air). */
+export const glideFactor = (level: number): number => Math.pow(0.5, level);
+export const fishMult = (level: number): number => 1 + 0.3 * level;
 export const magnetRadius = (level: number): number => (level === 0 ? 0 : 45 + 25 * level);
 export const PICKUP = 34;
 
@@ -67,14 +76,16 @@ export function tap(s: Sim): void {
     s.vy = s.late.vy;
     s.late = null;
     s.perfects++;
+    s.combo++;
+    s.maxCombo = Math.max(s.maxCombo, s.combo);
     s.events.push({ type: 'late', x: s.x, y: s.y });
   }
 }
 
 export const window_ = (level: number): number => PERFECT_WINDOW + 0.03 * level;
 
-function airDrag(vx: number, t: number, dt: number): number {
-  const k = 0.025 + (t > 40 ? (t - 40) * 0.035 : 0);
+function airDrag(vx: number, t: number, dt: number, glide: number): number {
+  const k = (0.05 + (t > 120 ? (t - 120) * 0.035 : 0)) * glideFactor(glide);
   return vx - vx * k * dt;
 }
 
@@ -83,7 +94,7 @@ export function step(s: Sim, dt = STEP): void {
   if (s.phase !== 'fly') return;
   s.t += dt;
   const e = s.up.bounce;
-  s.vx = airDrag(s.vx, s.t, dt);
+  s.vx = airDrag(s.vx, s.t, dt, s.up.glide);
   if (!s.grounded) s.vy -= GRAVITY * dt;
   s.x += s.vx * dt;
   s.y += s.vy * dt;
@@ -93,31 +104,31 @@ export function step(s: Sim, dt = STEP): void {
   if (s.grounded) {
     if (s.y > sf.h + 0.5) s.grounded = false;
     else if (s.y >= sf.h - 0.01) s.y = sf.h;
-    if (s.grounded) s.vx -= s.vx * 0.2 * dt;
+    if (s.grounded) s.vx -= (s.vx * 0.45 + 22) * glideFactor(s.up.glide) * dt;
   }
   if (s.y <= sf.h && (s.vy <= 0 || s.grounded)) {
     const impact = s.grounded ? 0 : -s.vy;
     const wanted = s.t - s.tapAt <= window_(e);
-    const eN = 0.6 + 0.05 * e;
+    const eN = 0.48 + 0.065 * e;
     const o = sf.o;
     if (o && o.kind === 'seal') {
-      const nv = { vx: s.vx, vy: Math.max(impact * eN, 340) };
-      const pv = { vx: Math.max(s.vx * 1.08, s.vx + 40), vy: Math.max(impact * (eN + 0.3), 640) };
+      const nv = { vx: s.vx * (0.88 + 0.015 * e), vy: Math.min(impact * eN, 1000) };
+      const pv = { vx: s.vx * (1.04 + 0.018 * e) + 20, vy: Math.min(impact * (eN + 0.38), 1000) };
       bounce(s, 'seal', wanted, nv, pv, sf.h);
       o.squash = s.t;
     } else if (sf.slope > 0.2) {
       const sp = Math.hypot(s.vx, s.vy);
       const th = Math.atan(sf.slope) + 0.18;
-      const nsp = Math.max(sp * (0.78 + 0.03 * e), 340);
-      const psp = Math.max(sp * 1.1 + 60, 580);
+      const nsp = Math.max(sp * (0.66 + 0.04 * e), 200);
+      const psp = Math.min(sp * (0.98 + 0.03 * e) + 30, 1300);
       bounce(s, 'berg', wanted, { vx: nsp * Math.cos(th), vy: nsp * Math.sin(th) }, { vx: psp * Math.cos(th), vy: psp * Math.sin(th) }, sf.h);
     } else if (impact > 110) {
       s.y = sf.h;
       s.vy = impact * 0.38;
-      s.vx *= 0.93;
+      s.vx *= 0.9 + 0.02 * Math.min(s.up.glide, 5);
       s.grounded = false;
       s.bounces++;
-      s.events.push({ type: 'bounce', kind: 'ice', perfect: false, x: s.x, y: s.y });
+      s.events.push({ type: 'bounce', kind: 'ice', perfect: false, x: s.x, y: s.y, combo: s.combo });
     } else {
       s.y = sf.h;
       s.vy = 0;
@@ -133,7 +144,9 @@ export function step(s: Sim, dt = STEP): void {
   }
 
   collect(s, dt);
-  if ((s.grounded && s.vx < 28) || s.t > MAX_TIME) {
+  if (s.x - s.stallX > 30) { s.stallX = s.x; s.stallT = s.t; }
+  const stalled = s.t - s.stallT > 2;
+  if ((s.grounded && s.vx < 40) || stalled || s.t > MAX_TIME) {
     s.phase = 'over';
     s.events.push({ type: 'over' });
   }
@@ -149,11 +162,15 @@ function bounce(
   const use = wanted ? pv : nv;
   s.vx = use.vx;
   s.vy = use.vy;
-  if (wanted) s.perfects++;
+  if (wanted) {
+    s.perfects++;
+    s.combo++;
+    s.maxCombo = Math.max(s.maxCombo, s.combo);
+  } else s.combo = 0;
   s.late = wanted ? null : { until: s.t + LATE_WINDOW, vx: pv.vx, vy: pv.vy };
   s.tapAt = -9;
   s.lockUntil = 0;
-  s.events.push({ type: 'bounce', kind, perfect: wanted, x: s.x, y: s.y });
+  s.events.push({ type: 'bounce', kind, perfect: wanted, x: s.x, y: s.y, combo: s.combo });
 }
 
 function collect(s: Sim, dt: number): void {
@@ -188,7 +205,7 @@ function collect(s: Sim, dt: number): void {
 }
 
 /** Poissons gagnés dans la partie : les dorés valent 5. */
-export const earned = (s: Sim): number => s.fish + s.gold * 5;
+export const earned = (s: Sim): number => Math.round((s.fish + s.gold * 5) * fishMult(s.up.fishx));
 
 /** Temps avant le prochain rebond sur phoque / iceberg si le pingouin est en l'air (null sinon). */
 export function predictBounce(s: Sim): { t: number; x: number; y: number; kind: 'seal' | 'berg' } | null {

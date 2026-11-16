@@ -41,7 +41,15 @@ export const sfx = {
   unlock: () => void ac(),
   launch: () => tone(180, 620, 0.22, 'triangle', 0.18),
   boing: () => tone(260, 520, 0.16, 'sine', 0.2),
-  perfect: () => { tone(420, 840, 0.14, 'triangle', 0.22); tone(630, 1260, 0.18, 'triangle', 0.18, 0.08); },
+  /** Le son monte d'un demi-ton environ à chaque rebond parfait d'affilée. */
+  perfect: (combo = 1) => {
+    const k = Math.pow(1.06, Math.min(Math.max(combo, 1) - 1, 18));
+    tone(420 * k, 840 * k, 0.14, 'triangle', 0.22);
+    tone(630 * k, 1260 * k, 0.18, 'triangle', 0.18, 0.08);
+  },
+  record: () => {
+    [523, 659, 784, 1047, 1319].forEach((f, i) => tone(f, f * 1.01, 0.22, 'triangle', 0.2, i * 0.09));
+  },
   fish: () => tone(880, 1320, 0.08, 'square', 0.07),
   gold: () => { tone(988, 1480, 0.1, 'square', 0.08); tone(1480, 1976, 0.14, 'square', 0.08, 0.07); },
   thud: () => tone(140, 60, 0.12, 'sine', 0.18),

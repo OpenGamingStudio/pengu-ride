@@ -28,7 +28,7 @@ export function freshSave(): SaveData {
     games: 0,
     owned: Object.values(DEFAULTS),
     equipped: { ...DEFAULTS },
-    up: { power: 0, bounce: 0, magnet: 0 },
+    up: { power: 0, bounce: 0, glide: 0, magnet: 0, fishx: 0 },
     tutoSeen: false,
     settings: { sound: true },
   };

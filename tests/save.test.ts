@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { SAVE_KEY } from '../src/config';
 import { freshSave, load, write, type Store } from '../src/save';
-import { buy, buyUpgrade, equip, nextAffordable, upgradeCost } from '../src/shop';
+import { buy, buyUpgrade, cheapestUpgrade, equip, nextAffordable, upgradeCost } from '../src/shop';
 
 function fake(init: Record<string, string> = {}): Store & { m: Record<string, string> } {
   const m = { ...init };
@@ -61,7 +61,7 @@ describe('sauvegarde', () => {
     expect(d.equipped.hat).toBe('hat.none');
     expect(d.equipped.scarf).toBe('scarf.none');
     expect(d.equipped.glasses).toBe('glasses.none');
-    expect(d.up).toEqual({ power: 5, bounce: 0, magnet: 0 });
+    expect(d.up).toEqual({ power: 8, bounce: 0, glide: 0, magnet: 0, fishx: 0 });
   });
 
   it('stockage absent ou qui jette', () => {
@@ -88,11 +88,11 @@ describe('boutique', () => {
     expect(equip(s, 'hat.chef')).toBe(false);
   });
 
-  it('les améliorations coûtent de plus en plus et plafonnent à 5', () => {
+  it('les améliorations coûtent de plus en plus et plafonnent à 8', () => {
     const s = freshSave();
     s.coins = 100000;
     expect(upgradeCost('magnet', 1)).toBeGreaterThan(upgradeCost('magnet', 0));
-    for (let i = 0; i < 5; i++) expect(buyUpgrade(s, 'magnet')).toBe('ok');
+    for (let i = 0; i < 8; i++) expect(buyUpgrade(s, 'magnet')).toBe('ok');
     expect(buyUpgrade(s, 'magnet')).toBe('max');
     s.coins = 1;
     expect(buyUpgrade(s, 'power')).toBe('poor');
@@ -102,6 +102,17 @@ describe('boutique', () => {
     const s = freshSave();
     expect(nextAffordable(s)).toBeNull();
     s.coins = 20;
-    expect(nextAffordable(s)).toBe('Aimant à poissons');
+    expect(nextAffordable(s)).toBe('Fronde costaude');
+  });
+
+  it('le premier achat est à portée d\'une seule partie courte, le bouton pointe le moins cher', () => {
+    const s = freshSave();
+    const c = cheapestUpgrade(s)!;
+    expect(c.cost).toBeLessThanOrEqual(6);
+    expect(c.id).toBe('power');
+    s.up.power = 1;
+    expect(cheapestUpgrade(s)!.id).toBe('glide');
+    for (const k of Object.keys(s.up) as (keyof typeof s.up)[]) s.up[k] = 8;
+    expect(cheapestUpgrade(s)).toBeNull();
   });
 });

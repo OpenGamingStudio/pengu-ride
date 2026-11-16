@@ -46,38 +46,51 @@ function arc(w: World, from: number, to: number, base: number, peak: number, n: 
   }
 }
 
-/** Génère la piste jusqu'à `limit` (ajoute des obstacles et des poissons, jamais en arrière). */
+/** Génère la piste jusqu'à `limit` : espacements, types et tailles tirés au hasard (graine = une partie). */
 export function generate(w: World, limit: number): void {
   while (w.genX < limit) {
     const first = w.items.length === 0;
+    const prev = w.items[w.items.length - 1];
     const d = w.genX / 1000;
-    const gap = first ? 520 : 170 + w.rand() * 170 + Math.min(d * 30, 100);
+    // écart minimum équitable : 260 unités de glace entre deux obstacles, davantage plus loin
+    const gap = first ? 460 : 260 + w.rand() * (340 + Math.min(d * 30, 160)) + Math.min(d * 20, 120);
     const start = w.genX === 0 ? 0 : w.genX;
     const r = w.rand();
     let kind: Kind = 'seal';
     if (!first) {
-      if (w.genX > 1500 && r > 0.88) kind = 'puddle';
-      else if (w.genX > 900 && r > 0.6) kind = 'berg';
+      if (w.genX > 2200 && r > 0.93 && prev.kind !== 'puddle') kind = 'puddle';
+      else if (w.genX > 700 && r > 0.55) kind = 'berg';
     }
     const cx = start + gap;
     let o: Obstacle;
     if (kind === 'seal') {
       o = { kind, x0: cx - SEAL_W / 2, x1: cx + SEAL_W / 2, h: SEAL_H, squash: -9, hit: false };
     } else if (kind === 'berg') {
-      o = { kind, x0: cx - BERG_RISE, x1: cx + BERG_TOP, h: BERG_H, squash: -9, hit: false };
+      const h = Math.round(BERG_H * (0.8 + w.rand() * 0.45));
+      o = { kind, x0: cx - BERG_RISE, x1: cx + BERG_TOP, h, squash: -9, hit: false };
     } else {
       o = { kind, x0: cx - PUDDLE_W / 2, x1: cx + PUDDLE_W / 2, h: 0, squash: -9, hit: false };
     }
-    // poissons : un arc dans l'air entre l'obstacle précédent et celui-ci, des poissons au sol avant une flaque
-    const prevEnd = w.items.length ? w.items[w.items.length - 1].x1 : 120;
+    // poissons : arc, ligne ou grappe dans l'air entre l'obstacle précédent et celui-ci ; plus fournis en s'éloignant
+    const prevEnd = prev ? prev.x1 : 120;
     const a = prevEnd + 50;
     const b = o.x0 - 30;
     if (b - a > 80) {
+      const more = Math.min(Math.floor(d * 1.2), 7) + (d < 2 ? 2 : 0);
       if (kind === 'puddle') arc(w, a + 30, b - 30, 24, 0, 4);
-      else arc(w, a, b, 70 + w.rand() * 40, 70 + w.rand() * 70, 5 + Math.floor(w.rand() * 3));
+      else {
+        const shape = w.rand();
+        const n = 4 + Math.floor(w.rand() * 3) + more;
+        if (shape < 0.5) arc(w, a, b, 70 + w.rand() * 50, 60 + w.rand() * 90, n);
+        else if (shape < 0.8) arc(w, a, b, 50 + w.rand() * 120, 0, n);
+        else {
+          arc(w, a, b, 80, 50, n);
+          arc(w, a, b, 150 + w.rand() * 40, 50, n);
+        }
+      }
     }
-    if (kind !== 'puddle' && w.rand() > 0.72) {
-      w.fish.push({ x: (o.x0 + o.x1) / 2, y: o.h + 260 + w.rand() * 60, gold: true, taken: false });
+    if (kind !== 'puddle' && w.rand() > 0.7) {
+      w.fish.push({ x: (o.x0 + o.x1) / 2, y: o.h + 240 + w.rand() * 90, gold: true, taken: false });
     }
     w.items.push(o);
     w.genX = o.x1;
