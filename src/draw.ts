@@ -71,7 +71,7 @@ export function drawPenguin(c: Ctx, o: Outfit, rot = 0, mood = 0, tail = 0): voi
   ell(c, -2, 6, 12, 5.5, COL.body, 3, -0.45);
   drawScarf(c, o.scarf, tail, false);
   drawGlasses(c, o.glasses);
-  drawHat(c, o.hat);
+  drawHat(c, o.hat, tail);
   c.restore();
 }
 
@@ -81,6 +81,8 @@ function scarfColors(id: string): string[] {
     case 'scarf.stripe': return ['#FF7A1A', '#FFD23F'];
     case 'scarf.pink': return ['#FF8FB0'];
     case 'scarf.long': return ['#8ED84A', '#FFFFFF'];
+    case 'scarf.rainbow': return ['#E63946', '#FF9F1C', '#FFD23F', '#5ED6B0', '#3AA0E0'];
+    case 'scarf.bow': return ['#B05CFF'];
     default: return [];
   }
 }
@@ -88,6 +90,15 @@ function scarfColors(id: string): string[] {
 function drawScarf(c: Ctx, id: string, wave: number, back: boolean): void {
   const cols = scarfColors(id);
   if (!cols.length) return;
+  if (id === 'scarf.bow') {
+    if (back) return;
+    c.save(); c.translate(6, 7);
+    poly(c, [0, 0, -11, -8, -11, 8], cols[0], 3);
+    poly(c, [0, 0, 11, -8, 11, 8], cols[0], 3);
+    ell(c, 0, 0, 4.2, 4.6, '#7A2FD0', 2.5);
+    c.restore();
+    return;
+  }
   if (back) {
     const len = id === 'scarf.long' ? 62 : 28;
     const n = Math.round(len / 7);
@@ -109,7 +120,11 @@ function drawScarf(c: Ctx, id: string, wave: number, back: boolean): void {
   c.roundRect(-5, -17, 11, 36, 4);
   c.fillStyle = cols[0];
   c.fill();
-  if (cols[1]) {
+  if (id === 'scarf.rainbow') {
+    c.save(); c.clip();
+    cols.forEach((col, i) => { c.fillStyle = col; c.fillRect(-6, -17 + i * 7.2, 13, 7.3); });
+    c.restore();
+  } else if (cols[1]) {
     c.save(); c.clip();
     c.fillStyle = cols[1];
     for (let y = -13; y < 18; y += 10) c.fillRect(-6, y, 13, 4.5);
@@ -136,6 +151,21 @@ function drawGlasses(c: Ctx, id: string): void {
       c.beginPath(); c.roundRect(10, -16, 20, 17, 6); c.fillStyle = '#FFD23F'; c.fill();
       c.lineWidth = 3; c.strokeStyle = INK; c.stroke();
       break;
+    case 'glasses.star': {
+      c.beginPath(); c.moveTo(4, -9); c.lineTo(13, -7); c.lineWidth = 2.5; c.strokeStyle = INK; c.stroke();
+      c.beginPath();
+      for (let i = 0; i < 10; i++) {
+        const r = i % 2 ? 4.6 : 10; const a = -Math.PI / 2 + i * Math.PI / 5;
+        c[i ? 'lineTo' : 'moveTo'](22 + Math.cos(a) * r, -8 + Math.sin(a) * r);
+      }
+      c.closePath(); c.fillStyle = '#FFD23F'; c.fill(); c.lineWidth = 2.8; c.strokeStyle = INK; c.stroke();
+      break;
+    }
+    case 'glasses.mono':
+      ell(c, 21, -7, 7.5, 7.5, '#FFFFFF66', 3);
+      c.beginPath(); c.moveTo(21, 0); c.quadraticCurveTo(24, 8, 17, 14); c.lineWidth = 2; c.strokeStyle = INK; c.stroke();
+      poly(c, [26, 5, 36, 3, 36, 8, 26, 9], '#3B2A1A', 2);
+      break;
     case 'glasses.heart':
       c.beginPath(); c.moveTo(4, -9); c.lineTo(13, -7); c.lineWidth = 2.5; c.strokeStyle = INK; c.stroke();
       heart(c, 22, -8, 6, '#FF4F9A');
@@ -143,34 +173,70 @@ function drawGlasses(c: Ctx, id: string): void {
   }
 }
 
-function drawHat(c: Ctx, id: string): void {
+function drawHat(c: Ctx, id: string, wave = 0): void {
   if (id === 'hat.none') return;
   const cx = 14;
   const base = -15;
-  if (id === 'hat.chef') {
-    ell(c, cx - 8, base - 15, 8, 9, '#FFFFFF');
-    ell(c, cx + 8, base - 15, 8, 9, '#FFFFFF');
-    ell(c, cx, base - 20, 9, 10, '#FFFFFF');
-    c.beginPath(); c.roundRect(cx - 12, base - 8, 24, 10, 3); c.fillStyle = '#FFFFFF'; c.fill();
-    c.lineWidth = 3; c.strokeStyle = INK; c.stroke();
-    return;
+  const band = (col: string, w = 30) => {
+    c.beginPath(); c.roundRect(cx - w / 2, base - 3, w, 8, 3.5);
+    c.fillStyle = col; c.fill(); c.lineWidth = 3; c.strokeStyle = INK; c.stroke();
+  };
+  const dome = (col: string) => {
+    c.beginPath(); c.arc(cx, base, 13, Math.PI, Math.PI * 2); c.closePath();
+    c.fillStyle = col; c.fill(); c.lineWidth = 3; c.strokeStyle = INK; c.stroke();
+  };
+  switch (id) {
+    case 'hat.chef':
+      ell(c, cx - 8, base - 15, 8, 9, '#FFFFFF');
+      ell(c, cx + 8, base - 15, 8, 9, '#FFFFFF');
+      ell(c, cx, base - 20, 9, 10, '#FFFFFF');
+      c.beginPath(); c.roundRect(cx - 12, base - 8, 24, 10, 3); c.fillStyle = '#FFFFFF'; c.fill();
+      c.lineWidth = 3; c.strokeStyle = INK; c.stroke();
+      return;
+    case 'hat.crown':
+      poly(c, [cx - 13, base + 3, cx - 14, base - 17, cx - 7, base - 8, cx, base - 21, cx + 7, base - 8, cx + 14, base - 17, cx + 13, base + 3], COL.gold, 3);
+      ell(c, cx, base - 8, 2.6, 2.6, COL.band, 1.8);
+      ell(c, cx - 8, base - 2, 2, 2, '#3AA0E0', 1.5);
+      ell(c, cx + 8, base - 2, 2, 2, '#5ED6B0', 1.5);
+      return;
+    case 'hat.party':
+      poly(c, [cx - 11, base + 3, cx + 11, base + 3, cx + 1, base - 30], '#B05CFF', 3);
+      ell(c, cx - 2, base - 10, 2.6, 2.6, '#FFE066', 0);
+      ell(c, cx + 3, base - 2, 2.6, 2.6, '#FFFFFF', 0);
+      ell(c, cx - 6, base - 1, 2.2, 2.2, '#FF8FB0', 0);
+      ell(c, cx + 1 + Math.sin(wave * 6) * 2, base - 32, 5, 5, '#FFE066', 2.5);
+      return;
+    case 'hat.viking':
+      for (const d of [-1, 1]) {
+        poly(c, [cx + d * 11, base - 4, cx + d * 22, base - 9, cx + d * 19, base - 24, cx + d * 14, base - 10], '#FFFFFF', 2.8);
+      }
+      dome('#8A97A8');
+      band('#B5651D');
+      ell(c, cx, base - 9, 3, 3, COL.gold, 1.8);
+      return;
+    case 'hat.duck': {
+      const bob = Math.sin(wave * 6) * 1.2;
+      c.save(); c.translate(0, bob);
+      ell(c, cx - 2, base - 6, 11, 8, '#FFD23F');
+      ell(c, cx + 6, base - 15, 6.5, 6.5, '#FFD23F');
+      poly(c, [cx + 11, base - 15, cx + 18, base - 13, cx + 11, base - 11], COL.beak, 2.2);
+      ell(c, cx + 7, base - 17, 1.4, 1.4, INK, 0);
+      ell(c, cx - 7, base - 6, 5, 3, '#FFB300', 1.8, -0.4);
+      c.restore();
+      return;
+    }
   }
-  const fill = id === 'hat.red' ? '#E63946' : id === 'hat.pompom' ? '#FF7A1A' : '#8ED84A';
-  c.beginPath();
-  c.arc(cx, base, 13, Math.PI, Math.PI * 2);
-  c.closePath();
-  c.fillStyle = fill;
-  c.fill();
+  dome(id === 'hat.red' ? '#E63946' : id === 'hat.pompom' ? '#FF7A1A' : '#8ED84A');
   if (id === 'hat.stripe') {
-    c.save(); c.clip();
+    c.save();
+    c.beginPath(); c.arc(cx, base, 13, Math.PI, Math.PI * 2); c.closePath(); c.clip();
     c.fillStyle = '#FFFFFF';
     for (let x = cx - 14; x < cx + 14; x += 9) c.fillRect(x, base - 14, 4.5, 15);
     c.restore();
+    c.beginPath(); c.arc(cx, base, 13, Math.PI, Math.PI * 2); c.closePath(); c.lineWidth = 3; c.strokeStyle = INK; c.stroke();
   }
-  c.lineWidth = 3; c.strokeStyle = INK; c.stroke();
-  c.beginPath(); c.roundRect(cx - 15, base - 3, 30, 8, 3.5);
-  c.fillStyle = id === 'hat.pompom' ? '#FFD23F' : '#FFFFFF'; c.fill(); c.stroke();
-  if (id === 'hat.pompom') ell(c, cx, base - 17, 6.5, 6.5, '#FFD23F', 2.5);
+  band(id === 'hat.pompom' ? '#FFD23F' : '#FFFFFF', 30);
+  if (id === 'hat.pompom') ell(c, cx + Math.sin(wave * 6) * 2, base - 17, 6.5, 6.5, '#FFD23F', 2.5);
   if (id === 'hat.red') ell(c, cx, base - 15, 4, 4, '#FFFFFF', 2.5);
 }
 
@@ -351,6 +417,23 @@ export function drawRing(c: Ctx, x: number, y: number, k: number, perfect: boole
   c.stroke();
 }
 
+/** Aperçu animé du pingouin équipé (boutique) : respire, penche la tête, l'écharpe flotte. */
+export function paintOutfit(cv: HTMLCanvasElement, o: Outfit, size: number, t: number): void {
+  const dpr = Math.min(window.devicePixelRatio || 1, 3);
+  const w = Math.round(size * dpr);
+  if (cv.width !== w) { cv.width = w; cv.height = w; }
+  const c = cv.getContext('2d');
+  if (!c) return;
+  c.setTransform(dpr, 0, 0, dpr, 0, 0);
+  c.clearRect(0, 0, size, size);
+  c.translate(size / 2, size * 0.62);
+  c.lineJoin = 'round'; c.lineCap = 'round';
+  const k = size / 120;
+  c.scale(k * 1.7, k * 1.7);
+  c.translate(-8, Math.sin(t * 2.2) * 2);
+  drawPenguin(c, o, -0.12 + Math.sin(t * 1.6) * 0.04, Math.sin(t * 0.9) > 0.96 ? 1 : 0, t);
+}
+
 // ---- icônes de la boutique et du tuto (canvas pré-rendus) -------------------------------------------
 
 export function paintIcon(cv: HTMLCanvasElement, kind: 'item' | 'upgrade' | 'fish' | 'seal' | 'berg' | 'sling' | 'penguin', id: string, size: number): void {
@@ -370,9 +453,9 @@ export function paintIcon(cv: HTMLCanvasElement, kind: 'item' | 'upgrade' | 'fis
   if (kind === 'item') {
     const shelf = id.split('.')[0] as Shelf;
     const o: Outfit = { ...NAKED, [shelf]: id };
-    const sc = shelf === 'hat' ? 1.5 : 1.7;
+    const sc = shelf === 'hat' ? 1.25 : 1.7;
     c.scale(sc, sc);
-    c.translate(shelf === 'hat' ? -12 : shelf === 'scarf' ? -2 : -18, shelf === 'hat' ? 12 : 0);
+    c.translate(shelf === 'hat' ? -12 : shelf === 'scarf' ? -2 : -18, shelf === 'hat' ? 20 : 0);
     drawPenguin(c, o, 0, 0);
   } else if (kind === 'upgrade') {
     drawUpgradeIcon(c, id as UpgradeId);

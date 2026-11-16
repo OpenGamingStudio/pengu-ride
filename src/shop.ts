@@ -38,17 +38,30 @@ export const COSMETICS: Cosmetic[] = [
   { id: 'hat.pompom', shelf: 'hat', name: 'Bonnet à pompon', desc: 'Un gros pompon jaune qui rebondit avec toi.', price: 70 },
   { id: 'hat.stripe', shelf: 'hat', name: 'Bonnet rayé', desc: 'Vert et blanc, comme une friandise.', price: 90 },
   { id: 'hat.chef', shelf: 'hat', name: 'Toque de chef', desc: 'Pour un pingouin qui cuisine ses poissons.', price: 130 },
+  { id: 'hat.party', shelf: 'hat', name: 'Chapeau de fête', desc: 'Un pompon qui tremble : c\'est l\'anniversaire du pingouin !', price: 100 },
+  { id: 'hat.duck', shelf: 'hat', name: 'Canard sur la tête', desc: 'Un petit canard en plastique. Il ne dit rien, il se balance.', price: 120 },
+  { id: 'hat.viking', shelf: 'hat', name: 'Casque viking', desc: 'Des cornes pour foncer dans les icebergs.', price: 160 },
+  { id: 'hat.crown', shelf: 'hat', name: 'Couronne royale', desc: 'Sa Majesté le Pingouin glisse en grand.', price: 260 },
   { id: 'scarf.none', shelf: 'scarf', name: 'Cou libre', desc: 'Pas d\'écharpe, tout léger.', price: 0 },
   { id: 'scarf.red', shelf: 'scarf', name: 'Écharpe rouge', desc: 'Un classique qui claque au vent.', price: 40 },
   { id: 'scarf.stripe', shelf: 'scarf', name: 'Écharpe rayée', desc: 'Orange et jaune, impossible de te rater.', price: 70 },
   { id: 'scarf.pink', shelf: 'scarf', name: 'Écharpe rose', desc: 'Douce comme un nuage de neige.', price: 90 },
   { id: 'scarf.long', shelf: 'scarf', name: 'Écharpe interminable', desc: 'Elle flotte loin derrière toi.', price: 140 },
+  { id: 'scarf.bow', shelf: 'scarf', name: 'Nœud papillon', desc: 'Chic, même en pleine glissade.', price: 100 },
+  { id: 'scarf.rainbow', shelf: 'scarf', name: 'Écharpe arc-en-ciel', desc: 'Cinq couleurs de bonne humeur.', price: 190 },
   { id: 'glasses.none', shelf: 'glasses', name: 'Yeux nus', desc: 'Pas de lunettes.', price: 0 },
   { id: 'glasses.round', shelf: 'glasses', name: 'Lunettes rondes', desc: 'Un air de pingouin savant.', price: 40 },
   { id: 'glasses.sun', shelf: 'glasses', name: 'Lunettes de soleil', desc: 'La glace brille fort, protège-toi.', price: 80 },
   { id: 'glasses.ski', shelf: 'glasses', name: 'Masque de ski', desc: 'Un grand verre jaune pour foncer.', price: 110 },
+  { id: 'glasses.mono', shelf: 'glasses', name: 'Monocle et moustache', desc: 'Un pingouin très distingué. Très.', price: 130 },
+  { id: 'glasses.star', shelf: 'glasses', name: 'Lunettes étoile', desc: 'Pour briller comme une vedette.', price: 170 },
   { id: 'glasses.heart', shelf: 'glasses', name: 'Lunettes cœur', desc: 'Tout te paraît adorable.', price: 150 },
 ];
+
+export type Rarity = 'Commun' | 'Rare' | 'Épique' | 'Légendaire';
+export function rarity(price: number): Rarity {
+  return price <= 50 ? 'Commun' : price <= 110 ? 'Rare' : price <= 170 ? 'Épique' : 'Légendaire';
+}
 
 export const DEFAULTS: Record<Shelf, string> = { hat: 'hat.none', scarf: 'scarf.none', glasses: 'glasses.none' };
 
