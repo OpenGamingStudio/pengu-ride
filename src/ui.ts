@@ -154,7 +154,7 @@ export function shopPanel(save: SaveData, onChange: () => void, onClose: () => v
         const pips = el('span', 'flex gap-1');
         for (let i = 0; i < MAX_LEVEL; i++) pips.append(el('i', 'h-3 w-5 rounded-full border-2 border-ink ' + (i < lvl ? 'bg-orange' : 'bg-white')));
         const li = row(icon('upgrade', u.id, 60), u.name, u.desc, btn, pips);
-        if (u.id === highlight) { li.classList.add('!bg-sun'); if (!bought) queueMicrotask(() => li.scrollIntoView({ block: 'nearest' })); }
+        if (u.id === highlight) { li.classList.add('!bg-sun'); }
         if (u.id === bought) pop = li;
         list.append(li);
       }
