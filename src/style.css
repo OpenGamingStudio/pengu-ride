@@ -1,0 +1,78 @@
+@import "tailwindcss";
+@source not inline("blur");
+@custom-variant short (@media (max-height: 520px));
+
+@font-face {
+  font-family: "Fredoka";
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url("./fonts/fredoka-latin-wght-normal.woff2") format("woff2");
+}
+
+/* Identité Pengu Ride : aplats vifs sur glace, contour encre marine 3 px, ombre dure. */
+@theme {
+  --color-*: initial;
+  --color-ink: #14213d;
+  --color-cream: #f4fbff;
+  --color-ice: #35c8ff;
+  --color-orange: #ff8a1f;
+  --color-sun: #ffd60a;
+  --color-white: #ffffff;
+  --font-sans: "Fredoka", ui-rounded, sans-serif;
+  --shadow-hard: 4px 4px 0 #14213d;
+}
+
+html { font-size: clamp(12px, 3.4vw, 16px); }
+html, body {
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+  background: #cdeeff;
+  color: #14213d;
+  font-weight: 500;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex min-h-[48px] items-center justify-center gap-2 rounded-2xl border-[3px] border-ink bg-white px-5 py-2 text-xl font-bold text-ink shadow-hard;
+    touch-action: manipulation;
+  }
+  .btn:active:not(:disabled) { @apply translate-x-1 translate-y-1 shadow-none; }
+  .btn:focus-visible, .card:focus-visible {
+    outline: 3px solid #14213d;
+    outline-offset: 3px;
+    box-shadow: 0 0 0 3px #ffffff, 4px 4px 0 #14213d;
+  }
+  .btn:disabled { @apply opacity-100; background: #c5d3dc; color: #3a4a5c; box-shadow: none; }
+  .btn-big { @apply bg-orange text-2xl; min-height: 56px; }
+  .btn-sky { @apply bg-ice; }
+  .btn-sun { @apply bg-sun; }
+  .btn-white { @apply bg-white; }
+  .btn-icon { @apply min-w-[48px] px-0; }
+  .chip {
+    @apply inline-flex min-h-[44px] items-center gap-2 rounded-2xl border-[3px] border-ink bg-white px-3 text-xl font-bold text-ink shadow-hard;
+  }
+  .panel { @apply rounded-3xl border-[3px] border-ink bg-white text-ink shadow-hard; }
+  .logo {
+    font-weight: 700;
+    line-height: 0.95;
+    color: #ffffff;
+    -webkit-text-stroke: 0;
+    text-shadow: 4px 4px 0 #14213d, -2px -2px 0 #14213d, 2px -2px 0 #14213d, -2px 2px 0 #14213d, 2px 2px 0 #14213d;
+  }
+  .card { @apply flex flex-col items-center gap-2 rounded-2xl border-[3px] border-ink bg-white p-3 text-center shadow-hard; }
+  .card.on { background: #ffd60a; }
+}
+
+.banner {
+  animation: pop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+@keyframes pop { from { transform: scale(0.6); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .banner { animation: none; } }
+html.rm .banner { animation: none; }
+
+[tabindex="-1"]:focus { outline: none; }
