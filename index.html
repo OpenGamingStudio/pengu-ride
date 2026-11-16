@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Pengu Ride</title>
+<meta name="description" content="Pengu Ride, un jeu web open source d'OpenGamingStudio : un pingouin glisse sur une pente de glace. Touche pour sauter, maintiens pour foncer !">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data:; connect-src 'none'; manifest-src 'self'; base-uri 'none'; form-action 'none'">
+<meta name="theme-color" content="#35c8ff">
+<meta name="referrer" content="no-referrer">
+<link rel="icon" href="favicon.ico" sizes="32x32">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="manifest" href="manifest.webmanifest">
+<script type="module" src="/src/main.ts"></script>
+</head>
+<body class="font-sans">
+<main id="app" class="fixed inset-0 overflow-hidden">
+  <canvas id="stage" class="absolute inset-0 h-full w-full touch-none" role="img" aria-label="Pente de glace : touche l'écran ou appuie sur Espace pour sauter, maintiens pour foncer, glisse le doigt vers la gauche pour freiner"></canvas>
+  <div id="live" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
+
+  <div id="hud" hidden class="pointer-events-none absolute inset-x-0 top-0 flex items-start justify-between gap-2 pt-[max(0.75rem,env(safe-area-inset-top))] pl-[max(0.75rem,env(safe-area-inset-left))] pr-[max(0.75rem,env(safe-area-inset-right))]">
+    <div class="flex flex-col items-start gap-2">
+      <p class="chip"><span class="sr-only">Distance :</span><span id="hud-dist" class="text-2xl">0</span>&nbsp;m</p>
+      <p class="chip"><svg class="h-6 w-6" viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="10" cy="12" rx="8" ry="5.5" fill="#ff7a59" stroke="#14213d" stroke-width="2.5"/><path d="M16 12l6-5v10z" fill="#ff7a59" stroke="#14213d" stroke-width="2.5" stroke-linejoin="round"/></svg><span class="sr-only">Poissons :</span><span id="hud-fish">0</span></p>
+    </div>
+    <p class="chip"><span class="sr-only">Zone :</span><span id="hud-biome">Banquise</span></p>
+    <button id="btn-pause" type="button" class="btn btn-sun btn-icon pointer-events-auto" aria-label="Pause" aria-keyshortcuts="Escape P">
+      <svg class="h-6 w-6" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4v16M17 4v16" stroke="#14213d" stroke-width="5" stroke-linecap="round"/></svg>
+    </button>
+  </div>
+  <div id="banner" hidden aria-hidden="true" class="pointer-events-none absolute inset-x-0 top-28 flex justify-center px-4"></div>
+  <div id="hint-box" hidden class="pointer-events-none absolute inset-x-0 top-[22%] flex justify-center px-4"><p id="hint" class="panel px-5 py-2 text-center text-xl font-bold">Touche pour sauter · maintiens pour foncer</p></div>
+
+  <section id="menu" class="absolute inset-0 flex flex-col items-center justify-between overflow-y-auto px-5 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-[max(1.5rem,env(safe-area-inset-top))] short:flex-row short:gap-8 short:px-[max(2rem,env(safe-area-inset-left))] short:pb-3 short:pt-3" aria-labelledby="menu-title">
+    <h1 id="menu-title" tabindex="-1" class="logo -rotate-3 pt-4 text-center text-6xl sm:text-8xl short:flex-1 short:pt-0 short:text-6xl">Pengu<br>Ride</h1>
+    <div class="flex w-full max-w-sm flex-col items-center gap-4 short:flex-1 short:gap-2">
+      <div class="flex gap-3">
+        <p class="chip">Record <span id="menu-best" class="ml-1">0</span>&nbsp;m</p>
+        <p class="chip"><svg class="h-6 w-6" viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="10" cy="12" rx="8" ry="5.5" fill="#ff7a59" stroke="#14213d" stroke-width="2.5"/><path d="M16 12l6-5v10z" fill="#ff7a59" stroke="#14213d" stroke-width="2.5" stroke-linejoin="round"/></svg><span class="sr-only">Poissons :</span><span id="menu-fish">0</span></p>
+      </div>
+      <button id="btn-play" type="button" class="btn btn-big w-full">Jouer</button>
+      <button id="btn-shop" type="button" class="btn btn-sky w-full">Boutique</button>
+      <div class="flex w-full gap-3">
+        <button id="btn-sound" type="button" class="btn btn-white flex-1 text-base" aria-pressed="true">Sons : oui</button>
+        <button id="btn-motion" type="button" class="btn btn-white flex-1 text-base" aria-pressed="false">Mouvements réduits : non</button>
+      </div>
+    </div>
+  </section>
+
+  <section id="shop" hidden class="absolute inset-0 flex flex-col items-center gap-3 overflow-y-auto bg-cream px-4 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-[max(1rem,env(safe-area-inset-top))]" aria-labelledby="shop-title">
+    <div class="flex w-full max-w-xl items-center justify-between gap-3">
+      <h2 id="shop-title" tabindex="-1" class="text-3xl font-bold">Boutique</h2>
+      <p class="chip"><svg class="h-6 w-6" viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="10" cy="12" rx="8" ry="5.5" fill="#ff7a59" stroke="#14213d" stroke-width="2.5"/><path d="M16 12l6-5v10z" fill="#ff7a59" stroke="#14213d" stroke-width="2.5" stroke-linejoin="round"/></svg><span class="sr-only">Poissons :</span><span id="shop-fish">0</span></p>
+    </div>
+    <ul id="shop-list" class="grid w-full max-w-xl grid-cols-2 gap-3"></ul>
+    <button id="btn-shop-back" type="button" class="btn btn-big w-full max-w-xl">Retour</button>
+  </section>
+
+  <section id="pause" hidden class="absolute inset-0 flex items-center justify-center overflow-y-auto bg-ink/60 px-5 py-3" role="dialog" aria-modal="true" aria-labelledby="pause-title">
+    <div class="panel flex w-full max-w-xs flex-col gap-3 p-5">
+      <h2 id="pause-title" tabindex="-1" class="text-center text-3xl font-bold">Pause</h2>
+      <button id="btn-resume" type="button" class="btn btn-big">Reprendre</button>
+      <button id="btn-pause-menu" type="button" class="btn btn-white">Quitter la partie</button>
+    </div>
+  </section>
+
+  <section id="over" hidden class="absolute inset-0 flex items-center justify-center overflow-y-auto bg-ink/60 px-5 py-3" role="dialog" aria-modal="true" aria-labelledby="over-title">
+    <div class="panel grid w-full max-w-xs gap-3 p-5 text-center short:max-w-xl short:grid-cols-2 short:items-center">
+      <div class="flex flex-col gap-2">
+        <h2 id="over-title" tabindex="-1" class="text-3xl font-bold">Aïe !</h2>
+        <p id="over-cause" class="text-lg"></p>
+        <p class="text-5xl font-bold"><span id="over-dist">0</span>&nbsp;m</p>
+        <p id="over-record" class="text-lg font-bold"></p>
+        <p class="text-lg">+<span id="over-fish">0</span> poissons</p>
+      </div>
+      <div class="flex flex-col gap-3">
+        <button id="btn-retry" type="button" class="btn btn-big">Rejouer</button>
+        <button id="btn-over-shop" type="button" class="btn btn-sky">Boutique</button>
+        <button id="btn-over-menu" type="button" class="btn btn-white">Menu</button>
+      </div>
+    </div>
+  </section>
+</main>
+</body>
+</html>
