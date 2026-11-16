@@ -1,5 +1,5 @@
 /** Version du jeu (semver), alignée sur package.json (test dans tests/version.test.ts). */
-export const VERSION = '1.1.0';
+export const VERSION = '1.1.1';
 export const SAVE_KEY = 'pengu-ride:save';
 export const SAVE_VERSION = 1;
 
