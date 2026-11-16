@@ -9,7 +9,10 @@ export type Ev =
   | { type: 'late'; x: number; y: number }
   | { type: 'fish'; gold: boolean; x: number; y: number }
   | { type: 'splash'; x: number; y: number }
-  | { type: 'over' };
+  | { type: 'over'; reason: EndReason };
+
+/** Pourquoi la partie s'arrête : plus d'élan, bloqué (iceberg, micro-rebonds), flaque, temps écoulé. */
+export type EndReason = 'stop' | 'stuck' | 'splash' | 'time';
 
 export interface Sim {
   phase: Phase;
@@ -36,6 +39,7 @@ export interface Sim {
   lockUntil: number;
   /** Rebond « parfait » possible encore un court instant après le contact (tap un peu tard). */
   late: { until: number; vx: number; vy: number } | null;
+  endReason: EndReason | null;
   events: Ev[];
 }
 
@@ -44,7 +48,7 @@ export function newSim(seed: number, up: Record<UpgradeId, number>): Sim {
   generate(world, 2400);
   return {
     phase: 'aim', x: 0, y: ANCHOR_Y, vx: 0, vy: 0, grounded: false, t: 0, world, up,
-    fish: 0, gold: 0, bounces: 0, perfects: 0, combo: 0, maxCombo: 0, stallX: 0, stallT: 0, tapAt: -9, lockUntil: 0, late: null, events: [],
+    fish: 0, gold: 0, bounces: 0, perfects: 0, combo: 0, maxCombo: 0, stallX: 0, stallT: 0, tapAt: -9, lockUntil: 0, late: null, endReason: null, events: [],
   };
 }
 
@@ -55,6 +59,9 @@ export const glideFactor = (level: number): number => Math.pow(0.5, level);
 export const fishMult = (level: number): number => 1 + 0.3 * level;
 export const magnetRadius = (level: number): number => (level === 0 ? 0 : 45 + 25 * level);
 export const PICKUP = 34;
+/** Seuils de repos : sous cette vitesse d'impact (ou cette vitesse contre un iceberg) il n'y a plus de rebond. */
+export const REST_IMPACT = 70;
+export const REST_SPEED = 120;
 
 export function launch(s: Sim, angle: number, power: number): void {
   if (s.phase !== 'aim') return;
@@ -107,11 +114,25 @@ export function step(s: Sim, dt = STEP): void {
     if (s.grounded) s.vx -= (s.vx * 0.45 + 22) * glideFactor(s.up.glide) * dt;
   }
   if (s.y <= sf.h && (s.vy <= 0 || s.grounded)) {
-    const impact = s.grounded ? 0 : -s.vy;
+    // en glissant contre un phoque, la vitesse horizontale compte comme choc (un petit glissement s'arrête dessus)
+    const impact = s.grounded ? (sf.o?.kind === 'seal' ? s.vx * 0.45 : 0) : -s.vy;
     const wanted = s.t - s.tapAt <= window_(e);
     const eN = 0.48 + 0.065 * e;
     const o = sf.o;
-    if (o && o.kind === 'seal') {
+    if (impact < REST_IMPACT && !(sf.slope > 0.2 && !s.grounded)) {
+      // trop faible pour rebondir : le pingouin se pose et glisse (jamais de micro-rebonds sur place)
+      s.y = sf.h;
+      s.vy = 0;
+      s.grounded = true;
+      s.late = null;
+    } else if (sf.slope > 0.2 && Math.hypot(s.vx, s.vy) < REST_SPEED) {
+      // trop lent contre la pente d'un iceberg : il s'arrête au pied (pas d'élan offert par le plancher de vitesse)
+      s.y = sf.h;
+      s.vx = 0;
+      s.vy = 0;
+      s.grounded = true;
+      s.late = null;
+    } else if (o && o.kind === 'seal') {
       const nv = { vx: s.vx * (0.88 + 0.015 * e), vy: Math.min(impact * eN, 1000) };
       const pv = { vx: s.vx * (1.04 + 0.018 * e) + 20, vy: Math.min(impact * (eN + 0.38), 1000) };
       bounce(s, 'seal', wanted, nv, pv, sf.h);
@@ -145,10 +166,13 @@ export function step(s: Sim, dt = STEP): void {
 
   collect(s, dt);
   if (s.x - s.stallX > 30) { s.stallX = s.x; s.stallT = s.t; }
-  const stalled = s.t - s.stallT > 2;
-  if ((s.grounded && s.vx < 40) || stalled || s.t > MAX_TIME) {
+  const stalled = s.t - s.stallT > 1.2;
+  const slow = s.grounded && s.vx < 40;
+  if (slow || stalled || s.t > MAX_TIME) {
     s.phase = 'over';
-    s.events.push({ type: 'over' });
+    const inWater = o?.kind === 'puddle' && s.grounded;
+    s.endReason = s.t > MAX_TIME ? 'time' : inWater ? 'splash' : slow ? 'stop' : 'stuck';
+    s.events.push({ type: 'over', reason: s.endReason });
   }
 }
 

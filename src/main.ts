@@ -34,6 +34,9 @@ let sim: Sim = newSim(1, save.up);
 let particles: Particle[] = [];
 let floaters: Floater[] = [];
 let shake = 0;
+/** Animation de fin : temps écoulé depuis l'arrêt, et plouf (flaque) ou étourdi (étoiles). */
+let endT = 0;
+let endSink = false;
 let camX = 0;
 let camY = 0;
 let paused = false;
@@ -151,6 +154,8 @@ function startAim(): void {
   sim = newSim((Math.random() * 2 ** 31) | 0, save.up);
   particles = [];
   floaters = [];
+  endT = 0;
+  endSink = false;
   aim = null;
   recordShown = false;
   lastCombo = 0;
@@ -271,7 +276,11 @@ function handleEvents(): void {
       sfx.splash();
       burst(ev.x, ev.y + 4, 14, COL.water, 200);
     } else if (ev.type === 'over') {
-      resultTimer = window.setTimeout(showResult, 900);
+      endT = 0;
+      endSink = ev.reason === 'splash';
+      if (endSink) { sfx.splash(); burst(sim.x, sim.y + 8, 26, COL.water, 280); burst(sim.x, sim.y + 8, 10, '#FFFFFF', 200); }
+      else sfx.boing();
+      resultTimer = window.setTimeout(showResult, 1200);
     }
   }
   sim.events.length = 0;
@@ -311,6 +320,11 @@ function update(dt: number): void {
   for (const f of floaters) { f.life -= dt; f.y += 40 * dt; }
   floaters = floaters.filter((f) => f.life > 0);
   shake = Math.max(0, shake - dt);
+  if (sim.phase === 'over') {
+    endT += dt;
+    // il glisse en ralentissant doucement jusqu'à l'arrêt (aucun rebond, aucun tremblement)
+    if (!endSink) { sim.x += sim.vx * dt; sim.vx *= Math.exp(-7 * dt); }
+  }
   if (sim.phase === 'fly') {
     $('fish-n').textContent = String(earned(sim));
     const d = distance(sim);
@@ -414,6 +428,32 @@ function drawAim(c: CanvasRenderingContext2D): void {
   }
 }
 
+/** Petites étoiles qui tournent au-dessus de la tête du pingouin étourdi. */
+function drawStars(c: CanvasRenderingContext2D, x: number, y: number, t: number): void {
+  const fade = Math.max(0, Math.min(1, (1.2 - t) * 4));
+  for (let i = 0; i < 3; i++) {
+    const a = t * 6 + (i * Math.PI * 2) / 3;
+    const sx = x + Math.cos(a) * 26;
+    const sy = y + Math.sin(a) * 8;
+    c.save();
+    c.globalAlpha = fade;
+    c.translate(sx, sy);
+    c.rotate(a);
+    c.beginPath();
+    for (let k = 0; k < 10; k++) {
+      const r = k % 2 ? 4 : 9;
+      c.lineTo(Math.cos((k * Math.PI) / 5) * r, Math.sin((k * Math.PI) / 5) * r);
+    }
+    c.closePath();
+    c.fillStyle = COL.sun;
+    c.fill();
+    c.lineWidth = 2;
+    c.strokeStyle = INK;
+    c.stroke();
+    c.restore();
+  }
+}
+
 function drawFlight(c: CanvasRenderingContext2D, t: number): void {
   if (sim.phase === 'fly' && !sim.grounded) {
     const p = predictBounce(sim);
@@ -427,8 +467,15 @@ function drawFlight(c: CanvasRenderingContext2D, t: number): void {
   c.translate(sim.x, sim.y + 20);
   c.scale(1, -1);
   c.scale(1, 1);
-  drawPenguin(c, outfit(), rot, 0, t * 3);
+  const over = sim.phase === 'over';
+  if (over && endSink) {
+    const k = Math.min(1, endT / 0.7);
+    c.globalAlpha = 1 - k;
+    c.translate(0, -34 * k);
+  }
+  drawPenguin(c, outfit(), rot, over ? 1 : 0, over ? 0 : t * 3);
   c.restore();
+  if (over && !endSink) drawStars(c, sim.x, sim.y + 62, endT);
 }
 
 // ---- démarrage --------------------------------------------------------------------------------------
