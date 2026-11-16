@@ -1,0 +1,50 @@
+@import "tailwindcss";
+
+@font-face {
+  font-family: "Fredoka";
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url("./fonts/fredoka-latin-wght-normal.woff2") format("woff2");
+}
+
+/* Identité Pengu Ride : « la fête sur la banquise ». Aplats vifs, contour encre, ombre dure orange. */
+@theme {
+  --font-sans: "Fredoka", ui-rounded, "Arial Rounded MT Bold", sans-serif;
+  --color-ink: #14284b;
+  --color-sky: #9fe3ff;
+  --color-ice: #f4fbff;
+  --color-ice-2: #cfefff;
+  --color-orange: #ff7a1a;
+  --color-sun: #ffd23f;
+  --color-berry: #e63946;
+  --color-mint: #5ed6b0;
+}
+
+html, body { height: 100%; margin: 0; overscroll-behavior: none; }
+body { background: var(--color-sky); color: var(--color-ink); font-family: var(--font-sans); overflow: hidden; -webkit-tap-highlight-color: transparent; }
+canvas { display: block; touch-action: none; }
+
+@layer components {
+  .btn {
+    @apply inline-flex min-h-12 min-w-12 items-center justify-center gap-2 rounded-2xl border-[3px] border-ink px-4 text-lg font-semibold leading-none text-ink shadow-[0_4px_0_0_var(--color-ink)] transition-transform active:translate-y-1 active:shadow-none cursor-pointer select-none;
+  }
+  .btn-main { @apply bg-orange text-white text-2xl min-h-16 px-8 rounded-3xl; text-shadow: 0 2px 0 var(--color-ink); }
+  .btn-sun { @apply bg-sun; }
+  .btn-ice { @apply bg-ice; }
+  .btn:disabled { @apply cursor-default bg-ice-2 opacity-80 shadow-none; }
+  .panel { @apply rounded-[28px] border-[3px] border-ink bg-ice p-4 shadow-[0_8px_0_0_var(--color-ink)]; }
+  .pill { @apply inline-flex min-h-11 items-center gap-1.5 rounded-full border-[3px] border-ink bg-white px-3 text-lg font-semibold; }
+}
+
+.btn:focus-visible, .tab:focus-visible { outline: 4px solid var(--color-berry); outline-offset: 3px; }
+
+@keyframes pop { from { transform: scale(0.85) rotate(-3deg); opacity: 0; } to { transform: scale(1) rotate(0); opacity: 1; } }
+.pop { animation: pop 0.22s ease-out both; }
+@keyframes wiggle { 0%, 100% { transform: rotate(-4deg); } 50% { transform: rotate(4deg); } }
+.wiggle { animation: wiggle 0.9s ease-in-out infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .pop, .wiggle { animation: none; }
+  .btn { transition: none; }
+}

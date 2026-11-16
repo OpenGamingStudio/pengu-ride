@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Pengu Ride</title>
+<meta name="description" content="Pengu Ride, un jeu web open source d'OpenGamingStudio : lance un petit pingouin à la fronde, rebondis sur les phoques et les icebergs, ramasse des poissons.">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data:; connect-src 'none'; manifest-src 'self'; base-uri 'none'; form-action 'none'">
+<meta name="theme-color" content="#FF7A1A">
+<meta name="referrer" content="no-referrer">
+<link rel="icon" href="favicon.ico" sizes="32x32">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="manifest" href="manifest.webmanifest">
+</head>
+<body>
+<div id="app" class="fixed inset-0 overflow-hidden select-none">
+  <canvas id="game" class="absolute inset-0 h-full w-full" aria-label="Pengu Ride : lance le pingouin avec la fronde puis touche l'écran pour rebondir"></canvas>
+
+  <header id="hud" class="pointer-events-none absolute inset-x-0 top-0 flex items-start justify-between gap-2 p-3 pt-[max(0.75rem,env(safe-area-inset-top))]">
+    <div class="flex flex-col items-start gap-2">
+      <span class="pill" aria-label="Poissons"><canvas id="fish-ico" class="h-7 w-7"></canvas><b id="fish-n">0</b></span>
+    </div>
+    <div class="flex flex-col items-center leading-none">
+      <b id="dist" class="text-4xl font-bold text-white [text-shadow:0_3px_0_var(--color-ink)]" aria-live="off">0 m</b>
+      <span id="rec" class="mt-1 rounded-full border-[3px] border-ink bg-sun px-3 py-1 text-sm font-semibold">Record : 0 m</span>
+    </div>
+    <div class="pointer-events-auto flex gap-2">
+      <button id="b-help" class="btn btn-ice !px-0 w-12" type="button" aria-label="Comment jouer">?</button>
+      <button id="b-sound" class="btn btn-ice !px-0 w-12" type="button" aria-label="Son" aria-pressed="true"><canvas id="snd-ico" class="h-7 w-7"></canvas></button>
+    </div>
+  </header>
+
+  <div id="dock" class="pointer-events-none absolute inset-x-0 bottom-0 flex flex-col items-center gap-3 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+    <p id="hint" class="wiggle rounded-full border-[3px] border-ink bg-white px-4 py-2 text-center text-lg font-semibold">Tire en arrière, puis lâche !</p>
+    <button id="b-shop" class="btn btn-sun pointer-events-auto relative" type="button">Boutique <span class="pill !min-h-8 !border-2 !px-2 !text-base"><canvas id="shop-ico" class="h-5 w-5"></canvas><b id="shop-n">0</b></span><i id="shop-dot" class="absolute -right-1 -top-1 hidden h-5 w-5 rounded-full border-[3px] border-ink bg-berry"></i></button>
+  </div>
+
+  <div id="layer" class="absolute inset-0 hidden items-center justify-center overflow-y-auto bg-ink/60 p-3" role="presentation"></div>
+</div>
+<noscript><p style="padding:1rem">Pengu Ride a besoin de JavaScript pour tourner.</p></noscript>
+<script type="module" src="/src/main.ts"></script>
+</body>
+</html>
