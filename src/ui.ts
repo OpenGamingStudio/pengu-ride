@@ -1,9 +1,9 @@
 /** Panneaux : fin de partie, boutique, mini-tuto. DOM construit sans innerHTML (aucun texte non fiable). */
-import { MAX_LEVEL } from './config';
-import { paintIcon } from './draw';
+import { MAX_LEVEL, VERSION } from './config';
+import { paintIcon, paintOutfit } from './draw';
 import type { SaveData } from './save';
 import {
-  buy, buyUpgrade, COSMETICS, cheapestUpgrade, equip, SHELVES, UPGRADES, upgradeCost, type Shelf, type UpgradeId,
+  buy, buyUpgrade, COSMETICS, cheapestUpgrade, equip, rarity, SHELVES, UPGRADES, upgradeCost, type Shelf, type UpgradeId,
 } from './shop';
 import { sfx } from './audio';
 
@@ -172,7 +172,7 @@ export function shopPanel(save: SaveData, onChange: () => void, onClose: () => v
             if (buy(save, c.id) === 'ok') { sfx.buy(); onChange(); render(); } else sfx.no();
           });
         }
-        list.append(row(icon('item', c.id, 60), c.name, c.desc, btn));
+        list.append(row(icon('item', c.id, 60), c.name, c.desc, btn, el('span', 'inline-block rounded-full border-2 border-ink bg-sun px-2 text-sm font-semibold', rarity(c.price))));
       }
     }
   };
@@ -185,8 +185,27 @@ export function shopPanel(save: SaveData, onChange: () => void, onClose: () => v
     b.addEventListener('click', () => { tab = t.id; render(); });
     tabs.append(b);
   }
-  box.append(tabs, list);
+  // aperçu du pingouin équipé, animé tant que la boutique est ouverte
+  const view = el('div', 'mb-3 flex items-center justify-center rounded-2xl border-[3px] border-ink bg-sky');
+  const pv = el('canvas', 'h-28 w-28 landscape:h-24 landscape:w-24');
+  pv.setAttribute('role', 'img');
+  pv.setAttribute('aria-label', 'Ton pingouin avec sa tenue');
+  view.append(pv);
+  const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  let started = false;
+  const t0 = performance.now();
+  const loop = () => {
+    if (started && !pv.isConnected) return;
+    started = true;
+    const px = pv.clientWidth || 112;
+    paintOutfit(pv, save.equipped, px, still ? 0 : (performance.now() - t0) / 1000);
+    if (!still) requestAnimationFrame(loop);
+  };
+  const redraw = () => { if (still) loop(); };
+  box.append(view, tabs, list, el('p', 'mt-2 text-center text-sm opacity-70', 'Pengu Ride v' + VERSION));
   render();
+  requestAnimationFrame(loop);
+  list.addEventListener('click', () => queueMicrotask(redraw));
   return box;
 }
 
