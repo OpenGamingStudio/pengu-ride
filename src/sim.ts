@@ -1,177 +1,211 @@
-// Simulation pure (aucun DOM) : le pingouin glisse le long de la pente, x = distance, y = hauteur au-dessus de la glace.
-import {
-  ACCEL, BACK_MALUS, BASE_SPEED, BOOST_BONUS, BOOST_TIME, COYOTE, GRAVITY, JUMP_BUFFER, JUMP_V, MAX_BASE_SPEED,
-  PENGU_H, START_X, TUCK_BONUS, U_PER_M,
-} from './config';
-import { makeRng, type Rng } from './rng';
+import { ANCHOR_Y, GRAVITY, LATE_WINDOW, MAX_TIME, PERFECT_WINDOW, STEP } from './config';
+import { generate, newWorld, surface, type World } from './world';
+import type { UpgradeId } from './shop';
 
-export type Kind = 'rock' | 'seal' | 'hole' | 'fish' | 'pad';
-export interface Obj {
-  kind: Kind;
-  x: number; // centre (hole : centre du trou)
-  w: number; // largeur
-  y: number; // fish : hauteur du centre
-  taken?: boolean;
-}
-export type Cause = 'rock' | 'seal' | 'hole';
-export interface Input {
-  jump: boolean; // appui ce pas
-  lean: number; // -1 (en arrière) .. 1 (en avant)
-}
-export type Event = 'jump' | 'fish' | 'boost' | 'land' | 'hit';
+export type Phase = 'aim' | 'fly' | 'over';
+export type Ev =
+  | { type: 'launch' }
+  | { type: 'bounce'; kind: 'seal' | 'berg' | 'ice'; perfect: boolean; x: number; y: number }
+  | { type: 'late'; x: number; y: number }
+  | { type: 'fish'; gold: boolean; x: number; y: number }
+  | { type: 'splash'; x: number; y: number }
+  | { type: 'over' };
 
-export interface Game {
+export interface Sim {
+  phase: Phase;
   x: number;
   y: number;
+  vx: number;
   vy: number;
-  speed: number;
-  lean: number;
-  fish: number;
-  boost: number;
-  buffer: number;
-  coyote: number;
   grounded: boolean;
-  falling: boolean;
-  over: Cause | null;
   t: number;
-  genX: number;
-  objs: Obj[];
-  rng: Rng;
-  events: Event[];
+  world: World;
+  up: Record<UpgradeId, number>;
+  fish: number;
+  gold: number;
+  bounces: number;
+  perfects: number;
+  tapAt: number;
+  /** Anti-spam : après un appui, les suivants sont ignorés un court instant. */
+  lockUntil: number;
+  /** Rebond « parfait » possible encore un court instant après le contact (tap un peu tard). */
+  late: { until: number; vx: number; vy: number } | null;
+  events: Ev[];
 }
 
-export const distM = (x: number) => Math.floor(Math.max(0, x) / U_PER_M);
-export const difficulty = (x: number) => Math.min(1, distM(x) / 1500);
-export const baseSpeed = (x: number) => BASE_SPEED + (MAX_BASE_SPEED - BASE_SPEED) * Math.min(1, distM(x) / 1500);
-
-export function newGame(seed: number): Game {
-  const g: Game = {
-    x: 0, y: 0, vy: 0, speed: BASE_SPEED, lean: 0, fish: 0, boost: 0, buffer: 0, coyote: 0,
-    grounded: true, falling: false, over: null, t: 0, genX: START_X, objs: [], rng: makeRng(seed), events: [],
+export function newSim(seed: number, up: Record<UpgradeId, number>): Sim {
+  const world = newWorld(seed);
+  generate(world, 2400);
+  return {
+    phase: 'aim', x: 0, y: ANCHOR_Y, vx: 0, vy: 0, grounded: false, t: 0, world, up,
+    fish: 0, gold: 0, bounces: 0, perfects: 0, tapAt: -9, lockUntil: 0, late: null, events: [],
   };
-  generate(g);
-  return g;
 }
 
-/** Portée d'un saut au pire cas (vitesse de base + glace). */
-const worstRange = (x: number) => (baseSpeed(x) + BOOST_BONUS) * ((2 * JUMP_V) / GRAVITY);
+export const distance = (s: Pick<Sim, 'x'>): number => Math.max(0, Math.floor(s.x / 40));
+export const launchSpeed = (power: number, level: number): number => (440 + 320 * power) * (1 + 0.1 * level);
+export const magnetRadius = (level: number): number => (level === 0 ? 0 : 45 + 25 * level);
+export const PICKUP = 34;
 
-function generate(g: Game): void {
-  const r = g.rng;
-  while (g.genX < g.x + 1600) {
-    const d = difficulty(g.x + 1600);
-    const roll = r();
-    let x = g.genX;
-    const safe = worstRange(x) + 130 + r() * 260 * (1 - d);
-    if (roll < 0.22) {
-      g.objs.push({ kind: 'rock', x, w: 34, y: 0 });
-      arc(g, x, 3);
-      x += 20;
-    } else if (roll < 0.4) {
-      g.objs.push({ kind: 'seal', x, w: 56, y: 0 });
-      arc(g, x, 4);
-      x += 30;
-    } else if (roll < 0.58) {
-      const w = 80 + r() * 50;
-      g.objs.push({ kind: 'hole', x, w, y: 0 });
-      arc(g, x, 4);
-      x += w / 2;
-    } else if (roll < 0.7 && d > 0.15) {
-      // paire rocher + phoque très rapprochés : un seul saut les couvre
-      g.objs.push({ kind: 'rock', x, w: 34, y: 0 }, { kind: 'seal', x: x + 70, w: 56, y: 0 });
-      arc(g, x + 35, 4);
-      x += 100;
-    } else if (roll < 0.85) {
-      const n = 4 + Math.floor(r() * 4);
-      const h = r() < 0.5 ? 14 : 70;
-      for (let i = 0; i < n; i++) g.objs.push({ kind: 'fish', x: x + i * 46, y: h + 12, w: 22 });
-      x += n * 46 - 100;
+export function launch(s: Sim, angle: number, power: number): void {
+  if (s.phase !== 'aim') return;
+  const p = Math.max(0, Math.min(1, power));
+  const sp = launchSpeed(p, s.up.power);
+  s.vx = Math.cos(angle) * sp;
+  s.vy = Math.sin(angle) * sp;
+  s.phase = 'fly';
+  s.events.push({ type: 'launch' });
+}
+
+/** Un appui : bon moment avant le contact (mémorisé) ou un peu après (le rebond est amélioré). */
+export function tap(s: Sim): void {
+  if (s.phase !== 'fly' || s.t < s.lockUntil) return;
+  s.tapAt = s.t;
+  s.lockUntil = s.t + 0.4;
+  if (s.late && s.t <= s.late.until) {
+    s.vx = s.late.vx;
+    s.vy = s.late.vy;
+    s.late = null;
+    s.perfects++;
+    s.events.push({ type: 'late', x: s.x, y: s.y });
+  }
+}
+
+export const window_ = (level: number): number => PERFECT_WINDOW + 0.03 * level;
+
+function airDrag(vx: number, t: number, dt: number): number {
+  const k = 0.025 + (t > 40 ? (t - 40) * 0.035 : 0);
+  return vx - vx * k * dt;
+}
+
+/** Un pas de simulation (dt = 1/120 s). */
+export function step(s: Sim, dt = STEP): void {
+  if (s.phase !== 'fly') return;
+  s.t += dt;
+  const e = s.up.bounce;
+  s.vx = airDrag(s.vx, s.t, dt);
+  if (!s.grounded) s.vy -= GRAVITY * dt;
+  s.x += s.vx * dt;
+  s.y += s.vy * dt;
+  generate(s.world, s.x + 2200);
+
+  const sf = surface(s.world, s.x);
+  if (s.grounded) {
+    if (s.y > sf.h + 0.5) s.grounded = false;
+    else if (s.y >= sf.h - 0.01) s.y = sf.h;
+    if (s.grounded) s.vx -= s.vx * 0.2 * dt;
+  }
+  if (s.y <= sf.h && (s.vy <= 0 || s.grounded)) {
+    const impact = s.grounded ? 0 : -s.vy;
+    const wanted = s.t - s.tapAt <= window_(e);
+    const eN = 0.6 + 0.05 * e;
+    const o = sf.o;
+    if (o && o.kind === 'seal') {
+      const nv = { vx: s.vx, vy: Math.max(impact * eN, 340) };
+      const pv = { vx: Math.max(s.vx * 1.08, s.vx + 40), vy: Math.max(impact * (eN + 0.3), 640) };
+      bounce(s, 'seal', wanted, nv, pv, sf.h);
+      o.squash = s.t;
+    } else if (sf.slope > 0.2) {
+      const sp = Math.hypot(s.vx, s.vy);
+      const th = Math.atan(sf.slope) + 0.18;
+      const nsp = Math.max(sp * (0.78 + 0.03 * e), 340);
+      const psp = Math.max(sp * 1.1 + 60, 580);
+      bounce(s, 'berg', wanted, { vx: nsp * Math.cos(th), vy: nsp * Math.sin(th) }, { vx: psp * Math.cos(th), vy: psp * Math.sin(th) }, sf.h);
+    } else if (impact > 110) {
+      s.y = sf.h;
+      s.vy = impact * 0.38;
+      s.vx *= 0.93;
+      s.grounded = false;
+      s.bounces++;
+      s.events.push({ type: 'bounce', kind: 'ice', perfect: false, x: s.x, y: s.y });
     } else {
-      g.objs.push({ kind: 'pad', x: x + 40, w: 80, y: 0 });
-      x += 60;
+      s.y = sf.h;
+      s.vy = 0;
+      s.grounded = true;
     }
-    g.genX = x + safe;
+  }
+
+  const o = surface(s.world, s.x).o;
+  if (o && o.kind === 'puddle' && !o.hit && s.grounded) {
+    o.hit = true;
+    s.vx *= 0.5;
+    s.events.push({ type: 'splash', x: s.x, y: s.y });
+  }
+
+  collect(s, dt);
+  if ((s.grounded && s.vx < 28) || s.t > MAX_TIME) {
+    s.phase = 'over';
+    s.events.push({ type: 'over' });
   }
 }
 
-/** Poissons en arc au-dessus d'un danger : récompense le saut. */
-function arc(g: Game, cx: number, n: number): void {
-  for (let i = 0; i < n; i++) {
-    const t = n === 1 ? 0.5 : i / (n - 1);
-    g.objs.push({ kind: 'fish', x: cx + (t - 0.5) * 150, y: 18 + Math.sin(t * Math.PI) * 120, w: 22 });
+function bounce(
+  s: Sim, kind: 'seal' | 'berg', wanted: boolean,
+  nv: { vx: number; vy: number }, pv: { vx: number; vy: number }, h: number,
+): void {
+  s.y = h + 0.01;
+  s.grounded = false;
+  s.bounces++;
+  const use = wanted ? pv : nv;
+  s.vx = use.vx;
+  s.vy = use.vy;
+  if (wanted) s.perfects++;
+  s.late = wanted ? null : { until: s.t + LATE_WINDOW, vx: pv.vx, vy: pv.vy };
+  s.tapAt = -9;
+  s.lockUntil = 0;
+  s.events.push({ type: 'bounce', kind, perfect: wanted, x: s.x, y: s.y });
+}
+
+function collect(s: Sim, dt: number): void {
+  const mr = magnetRadius(s.up.magnet);
+  const reach = Math.max(mr, PICKUP) + 4;
+  const fish = s.world.fish;
+  // les poissons sont triés par x : on ne regarde que ceux proches
+  let lo = 0;
+  let hi = fish.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (fish[mid].x < s.x - reach) lo = mid + 1;
+    else hi = mid;
+  }
+  for (let i = lo; i < fish.length && fish[i].x <= s.x + reach; i++) {
+    const f = fish[i];
+    if (f.taken) continue;
+    const dx = s.x - f.x;
+    const dy = s.y + 14 - f.y;
+    const d = Math.hypot(dx, dy);
+    if (d < PICKUP) {
+      f.taken = true;
+      if (f.gold) s.gold++;
+      else s.fish++;
+      s.events.push({ type: 'fish', gold: f.gold, x: f.x, y: f.y });
+    } else if (mr > 0 && d < mr) {
+      const m = Math.min(d, 900 * dt);
+      f.x += (dx / d) * m;
+      f.y += (dy / d) * m;
+    }
   }
 }
 
-export function inHole(g: Game, x: number): Obj | null {
-  for (const o of g.objs) if (o.kind === 'hole' && Math.abs(x - o.x) < o.w / 2 - 6) return o;
+/** Poissons gagnés dans la partie : les dorés valent 5. */
+export const earned = (s: Sim): number => s.fish + s.gold * 5;
+
+/** Temps avant le prochain rebond sur phoque / iceberg si le pingouin est en l'air (null sinon). */
+export function predictBounce(s: Sim): { t: number; x: number; y: number; kind: 'seal' | 'berg' } | null {
+  if (s.phase !== 'fly' || s.grounded) return null;
+  let { x, y, vx, vy } = s;
+  let t = 0;
+  for (let i = 0; i < 360; i++) {
+    vy -= GRAVITY * STEP;
+    x += vx * STEP;
+    y += vy * STEP;
+    t += STEP;
+    const sf = surface(s.world, x);
+    if (y <= sf.h && vy <= 0) {
+      if (sf.o && sf.o.kind === 'seal') return { t, x, y: sf.h, kind: 'seal' };
+      if (sf.slope > 0.2) return { t, x, y: sf.h, kind: 'berg' };
+      return null;
+    }
+  }
   return null;
-}
-
-export function step(g: Game, dt: number, inp: Input): void {
-  g.events.length = 0;
-  if (g.over) return;
-  g.t += dt;
-  g.lean += (inp.lean - g.lean) * Math.min(1, dt * 14);
-  if (inp.jump) g.buffer = JUMP_BUFFER;
-  else g.buffer = Math.max(0, g.buffer - dt);
-  g.boost = Math.max(0, g.boost - dt);
-
-  const target =
-    baseSpeed(g.x) +
-    (g.grounded ? (g.lean > 0 ? TUCK_BONUS * g.lean : BACK_MALUS * g.lean) : 0) +
-    (g.boost > 0 ? BOOST_BONUS * Math.min(1, g.boost / 0.5) : 0);
-  const dv = ACCEL * dt;
-  g.speed += Math.max(-dv, Math.min(dv, target - g.speed));
-  g.x += g.speed * dt;
-
-  const hole = g.y <= 0 && !g.falling ? inHole(g, g.x) : null;
-  if (hole) g.falling = true;
-  g.coyote = g.grounded && !g.falling ? COYOTE : Math.max(0, g.coyote - dt);
-  if (g.buffer > 0 && (g.grounded || g.coyote > 0) && g.vy <= 0) {
-    g.vy = JUMP_V;
-    g.grounded = false;
-    g.coyote = 0;
-    g.buffer = 0;
-    g.events.push('jump');
-  }
-  if (!g.grounded || g.falling) {
-    const k = g.falling ? 1 : inp.lean > 0.3 ? 1.45 : inp.lean < -0.3 ? 0.82 : 1;
-    g.vy -= GRAVITY * k * dt;
-    g.y += g.vy * dt;
-    if (g.falling) {
-      if (g.y < -160) {
-        g.over = 'hole';
-        g.events.push('hit');
-      }
-    } else if (g.y <= 0) {
-      g.y = 0;
-      g.vy = 0;
-      g.grounded = true;
-      g.events.push('land');
-    }
-  }
-  if (g.falling) return;
-
-  for (const o of g.objs) {
-    const dx = Math.abs(o.x - g.x);
-    if (o.kind === 'rock' || o.kind === 'seal') {
-      const top = o.kind === 'rock' ? 32 : 28;
-      if (dx < o.w / 2 + 10 && g.y < top - 4) {
-        g.over = o.kind;
-        g.events.push('hit');
-        return;
-      }
-    } else if (o.kind === 'fish' && !o.taken) {
-      if (dx < 26 && Math.abs(g.y + PENGU_H / 2 - o.y) < 28) {
-        o.taken = true;
-        g.fish++;
-        g.events.push('fish');
-      }
-    } else if (o.kind === 'pad' && g.grounded && dx < o.w / 2 && g.boost < BOOST_TIME - 0.3) {
-      g.boost = BOOST_TIME;
-      g.events.push('boost');
-    }
-  }
-  g.objs = g.objs.filter((o) => o.x + o.w > g.x - 600);
-  generate(g);
 }

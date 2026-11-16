@@ -1,62 +1,107 @@
-// Sauvegarde locale (localStorage) : lue avec validation, jamais de crash si le contenu est abîmé.
-import { SKINS } from './skins';
+import { MAX_LEVEL, SAVE_KEY, SAVE_VERSION } from './config';
+import { DEFAULTS, itemById, type Shelf, type UpgradeId } from './shop';
 
-export interface Save {
+export interface SaveData {
+  v: number;
   best: number;
-  fish: number;
+  coins: number;
+  totalFish: number;
+  games: number;
   owned: string[];
-  equipped: string;
-  sound: boolean;
-  reduced: boolean;
+  equipped: Record<Shelf, string>;
+  up: Record<UpgradeId, number>;
+  tutoSeen: boolean;
+  settings: { sound: boolean };
 }
 
-export const SAVE_KEY = 'pengu-ride-save-v1';
-export const defaults = (): Save => ({ best: 0, fish: 0, owned: ['classic'], equipped: 'classic', sound: true, reduced: false });
+export interface Store {
+  getItem(k: string): string | null;
+  setItem(k: string, v: string): void;
+}
 
-const num = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) && v >= 0 ? Math.floor(v) : 0);
+export function freshSave(): SaveData {
+  return {
+    v: SAVE_VERSION,
+    best: 0,
+    coins: 0,
+    totalFish: 0,
+    games: 0,
+    owned: Object.values(DEFAULTS),
+    equipped: { ...DEFAULTS },
+    up: { power: 0, bounce: 0, magnet: 0 },
+    tutoSeen: false,
+    settings: { sound: true },
+  };
+}
 
-export function parseSave(raw: string | null): Save {
-  const d = defaults();
-  if (!raw) return d;
-  try {
-    const o = JSON.parse(raw) as Record<string, unknown>;
-    if (!o || typeof o !== 'object') return d;
-    const ids = new Set(SKINS.map((s) => s.id));
-    const owned = Array.isArray(o.owned) ? o.owned.filter((s): s is string => typeof s === 'string' && ids.has(s)) : [];
-    if (!owned.includes('classic')) owned.unshift('classic');
-    const equipped = typeof o.equipped === 'string' && owned.includes(o.equipped) ? o.equipped : 'classic';
-    return {
-      best: num(o.best),
-      fish: num(o.fish),
-      owned: [...new Set(owned)],
-      equipped,
-      sound: o.sound !== false,
-      reduced: o.reduced === true,
-    };
-  } catch {
-    return d;
+const int = (x: unknown): number => (typeof x === 'number' && Number.isFinite(x) && x >= 0 ? Math.floor(x) : 0);
+
+/** Nettoie un objet lu : entiers >= 0, ids inconnus retirés, équipement non possédé remis au défaut. */
+export function sanitize(raw: Record<string, unknown>): SaveData {
+  const s = freshSave();
+  s.best = int(raw.best);
+  s.coins = int(raw.coins);
+  s.totalFish = int(raw.totalFish);
+  s.games = int(raw.games);
+  if (Array.isArray(raw.owned)) {
+    for (const id of raw.owned) if (typeof id === 'string' && itemById(id) && !s.owned.includes(id)) s.owned.push(id);
   }
-}
-
-export function load(): Save {
-  try {
-    return parseSave(localStorage.getItem(SAVE_KEY));
-  } catch {
-    return defaults();
+  const eq = (raw.equipped ?? {}) as Record<string, unknown>;
+  for (const shelf of Object.keys(DEFAULTS) as Shelf[]) {
+    const id = eq[shelf];
+    if (typeof id === 'string' && s.owned.includes(id) && itemById(id)?.shelf === shelf) s.equipped[shelf] = id;
   }
+  const up = (raw.up ?? {}) as Record<string, unknown>;
+  for (const k of Object.keys(s.up) as UpgradeId[]) s.up[k] = Math.min(MAX_LEVEL, int(up[k]));
+  s.tutoSeen = raw.tutoSeen === true;
+  const st = (raw.settings ?? {}) as Record<string, unknown>;
+  if (typeof st.sound === 'boolean') s.settings.sound = st.sound;
+  return s;
 }
 
-export function store(s: Save): void {
+export interface Loaded {
+  data: SaveData;
+  /** false : version future, on n'écrit pas pour ne rien abîmer. */
+  writable: boolean;
+  /** false : stockage indisponible (navigation privée) : « progression non sauvegardée ». */
+  persistent: boolean;
+}
+
+export function load(store: Store | null): Loaded {
+  if (!store) return { data: freshSave(), writable: true, persistent: false };
+  let text: string | null;
   try {
-    localStorage.setItem(SAVE_KEY, JSON.stringify(s));
+    text = store.getItem(SAVE_KEY);
   } catch {
-    /* stockage plein ou interdit : on joue quand même */
+    return { data: freshSave(), writable: true, persistent: false };
   }
+  if (text === null) return { data: freshSave(), writable: true, persistent: true };
+  let raw: unknown;
+  try {
+    raw = JSON.parse(text);
+    if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) throw new Error('forme');
+  } catch {
+    try {
+      store.setItem(SAVE_KEY + '.corrupt', text);
+    } catch {
+      /* rien de plus à faire */
+    }
+    return { data: freshSave(), writable: true, persistent: true };
+  }
+  const obj = raw as Record<string, unknown>;
+  const v = int(obj.v) || 1;
+  const data = sanitize(obj);
+  if (v > SAVE_VERSION) return { data, writable: false, persistent: true };
+  data.v = SAVE_VERSION;
+  return { data, writable: true, persistent: true };
 }
 
-/** Achat : renvoie la sauvegarde mise à jour, ou null si impossible. */
-export function buy(s: Save, id: string): Save | null {
-  const sk = SKINS.find((k) => k.id === id);
-  if (!sk || s.owned.includes(id) || s.fish < sk.price) return null;
-  return { ...s, fish: s.fish - sk.price, owned: [...s.owned, id], equipped: id };
+export function write(store: Store | null, loaded: Loaded): boolean {
+  if (!store || !loaded.writable) return false;
+  try {
+    store.setItem(SAVE_KEY, JSON.stringify(loaded.data));
+    return true;
+  } catch {
+    return false;
+  }
 }

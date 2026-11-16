@@ -1,6 +1,4 @@
 @import "tailwindcss";
-@source not inline("blur");
-@custom-variant short (@media (max-height: 520px));
 
 @font-face {
   font-family: "Fredoka";
@@ -10,69 +8,43 @@
   src: url("./fonts/fredoka-latin-wght-normal.woff2") format("woff2");
 }
 
-/* Identité Pengu Ride : aplats vifs sur glace, contour encre marine 3 px, ombre dure. */
+/* Identité Pengu Ride : « la fête sur la banquise ». Aplats vifs, contour encre, ombre dure orange. */
 @theme {
-  --color-*: initial;
-  --color-ink: #14213d;
-  --color-cream: #f4fbff;
-  --color-ice: #35c8ff;
-  --color-orange: #ff8a1f;
-  --color-sun: #ffd60a;
-  --color-white: #ffffff;
-  --font-sans: "Fredoka", ui-rounded, sans-serif;
-  --shadow-hard: 4px 4px 0 #14213d;
+  --font-sans: "Fredoka", ui-rounded, "Arial Rounded MT Bold", sans-serif;
+  --color-ink: #14284b;
+  --color-sky: #9fe3ff;
+  --color-ice: #f4fbff;
+  --color-ice-2: #cfefff;
+  --color-orange: #ff7a1a;
+  --color-sun: #ffd23f;
+  --color-berry: #e63946;
+  --color-mint: #5ed6b0;
 }
 
-html { font-size: clamp(12px, 3.4vw, 16px); }
-html, body {
-  height: 100%;
-  overflow: hidden;
-  overscroll-behavior: none;
-  background: #cdeeff;
-  color: #14213d;
-  font-weight: 500;
-  -webkit-tap-highlight-color: transparent;
-  user-select: none;
-  -webkit-user-select: none;
-}
+html, body { height: 100%; margin: 0; overscroll-behavior: none; }
+body { background: var(--color-sky); color: var(--color-ink); font-family: var(--font-sans); overflow: hidden; -webkit-tap-highlight-color: transparent; }
+canvas { display: block; touch-action: none; }
 
 @layer components {
   .btn {
-    @apply inline-flex min-h-[48px] items-center justify-center gap-2 rounded-2xl border-[3px] border-ink bg-white px-5 py-2 text-xl font-bold text-ink shadow-hard;
-    touch-action: manipulation;
+    @apply inline-flex min-h-12 min-w-12 items-center justify-center gap-2 rounded-2xl border-[3px] border-ink px-4 text-lg font-semibold leading-none text-ink shadow-[0_4px_0_0_var(--color-ink)] transition-transform active:translate-y-1 active:shadow-none cursor-pointer select-none;
   }
-  .btn:active:not(:disabled) { @apply translate-x-1 translate-y-1 shadow-none; }
-  .btn:focus-visible, .card:focus-visible {
-    outline: 3px solid #14213d;
-    outline-offset: 3px;
-    box-shadow: 0 0 0 3px #ffffff, 4px 4px 0 #14213d;
-  }
-  .btn:disabled { @apply opacity-100; background: #c5d3dc; color: #3a4a5c; box-shadow: none; }
-  .btn-big { @apply bg-orange text-2xl; min-height: 56px; }
-  .btn-sky { @apply bg-ice; }
+  .btn-main { @apply bg-orange text-white text-2xl min-h-16 px-8 rounded-3xl; text-shadow: 0 2px 0 var(--color-ink); }
   .btn-sun { @apply bg-sun; }
-  .btn-white { @apply bg-white; }
-  .btn-icon { @apply min-w-[48px] px-0; }
-  .chip {
-    @apply inline-flex min-h-[44px] items-center gap-2 rounded-2xl border-[3px] border-ink bg-white px-3 text-xl font-bold text-ink shadow-hard;
-  }
-  .panel { @apply rounded-3xl border-[3px] border-ink bg-white text-ink shadow-hard; }
-  .logo {
-    font-weight: 700;
-    line-height: 0.95;
-    color: #ffffff;
-    -webkit-text-stroke: 0;
-    text-shadow: 4px 4px 0 #14213d, -2px -2px 0 #14213d, 2px -2px 0 #14213d, -2px 2px 0 #14213d, 2px 2px 0 #14213d;
-  }
-  .card { @apply flex flex-col items-center gap-2 rounded-2xl border-[3px] border-ink bg-white p-3 text-center shadow-hard; }
-  .card.on { background: #ffd60a; }
+  .btn-ice { @apply bg-ice; }
+  .btn:disabled { @apply cursor-default bg-ice-2 opacity-80 shadow-none; }
+  .panel { @apply rounded-[28px] border-[3px] border-ink bg-ice p-4 shadow-[0_8px_0_0_var(--color-ink)]; }
+  .pill { @apply inline-flex min-h-11 items-center gap-1.5 rounded-full border-[3px] border-ink bg-white px-3 text-lg font-semibold; }
 }
 
-.banner {
-  animation: pop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
-}
-@keyframes pop { from { transform: scale(0.6); opacity: 0; } to { transform: scale(1); opacity: 1; } }
-@media (prefers-reduced-motion: reduce) { .banner { animation: none; } }
-html.rm .banner { animation: none; }
+.btn:focus-visible, .tab:focus-visible { outline: 4px solid var(--color-berry); outline-offset: 3px; }
 
-[tabindex="-1"]:focus { outline: none; }
+@keyframes pop { from { transform: scale(0.85) rotate(-3deg); opacity: 0; } to { transform: scale(1) rotate(0); opacity: 1; } }
+.pop { animation: pop 0.22s ease-out both; }
+@keyframes wiggle { 0%, 100% { transform: rotate(-4deg); } 50% { transform: rotate(4deg); } }
+.wiggle { animation: wiggle 0.9s ease-in-out infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .pop, .wiggle { animation: none; }
+  .btn { transition: none; }
+}

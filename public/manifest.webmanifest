@@ -1,14 +1,14 @@
 {
   "name": "Pengu Ride",
   "short_name": "Pengu Ride",
-  "description": "Un pingouin glisse sur une pente de glace. Touche pour sauter, maintiens pour foncer !",
+  "description": "Lance un petit pingouin à la fronde, rebondis sur les phoques et les icebergs, ramasse des poissons.",
   "lang": "fr",
   "start_url": ".",
   "scope": ".",
   "display": "standalone",
   "orientation": "any",
-  "theme_color": "#35C8FF",
-  "background_color": "#CDEEFF",
+  "theme_color": "#FF7A1A",
+  "background_color": "#9FE3FF",
   "icons": [
     { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
     { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },

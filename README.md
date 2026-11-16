@@ -1,34 +1,31 @@
 # Pengu Ride
 
-Un petit pingouin glisse sur une pente de glace. Évite les rochers, les trous et les phoques, ramasse des poissons (la monnaie de la boutique) et va le plus loin possible. Jouable dans le navigateur, sur mobile (portrait ou paysage) et au clavier. Open source (MIT), par [OpenGamingStudio](https://opengamingstudio.com).
+Un petit pingouin lancé à la fronde glisse sur la glace, rebondit sur les phoques et les icebergs, ramasse des poissons et s'habille à la boutique. Jeu web open source d'[OpenGamingStudio](https://opengamingstudio.com), jouable dans le navigateur, d'abord au doigt en portrait (mais aussi en paysage et au clavier).
 
 Jouer : https://pengu-ride.opengamingstudio.com
 
-## Commandes
+## Comment jouer
 
-| Action | Doigt | Clavier |
-|---|---|---|
-| Sauter | toucher | Espace, Haut, W |
-| Foncer (plus vite au sol, plonge en l'air) | maintenir | Droite, Bas, D, S |
-| Freiner (plane en l'air) | maintenir et glisser vers la gauche | Gauche, A |
-| Pause / sons | bouton Pause | Échap ou P / M |
-
-La glace turbo (bande bleue) donne un coup d'accélérateur. Trois zones s'enchaînent tous les 400 m : Banquise, Aurore, Grotte de glace. Le score est la distance en mètres. La boutique propose 8 skins payés en poissons ; tout est enregistré dans le `localStorage` (aucun serveur, aucun compte).
+- **Fronde** : pose le doigt n'importe où, tire vers le bas puis lâche (angle et puissance). Des points montrent le trajet. Clavier : Espace lance, puis Espace rebondit.
+- **Rebonds** : sur un phoque (trampoline) ou un iceberg (tremplin), un cercle se resserre. Touche l'écran juste avant l'impact pour un **rebond parfait** (plus haut, plus loin). Un appui trop tôt verrouille les suivants 0,4 s : inutile de spammer.
+- **Poissons** : 1 pièce chacun, 5 pour les dorés. Ils servent de monnaie.
+- **Boutique** : améliorations (puissance du lancer, rebonds, aimant à poissons, 5 niveaux) et cosmétiques (bonnets, écharpes, lunettes).
+- Très peu de dangers : seules quelques flaques ralentissent. Une partie dure 30 à 60 secondes.
+- Records, poissons, achats et réglages sont gardés dans le `localStorage` du navigateur (rien n'est envoyé nulle part).
 
 ## Développement
 
-```sh
-npm ci
-npm run dev        # serveur de dev
-npm test           # vitest : simulation, équité (robot), sauvegarde, boutique
-npm run build      # tsc + build dans dist/
-docker build -t pengu-ride . && docker run -p 8080:80 pengu-ride
+```bash
+npm install
+npm run dev        # serveur local
+npm test           # tests (vitest) : physique, piste, sauvegarde, boutique
+npm run build      # tsc + build Vite (dist/)
 ```
 
-TypeScript, Vite, Tailwind v4, Canvas 2D, Web Audio (sons synthétisés : aucun fichier externe). Police Fredoka auto-hébergée (OFL). Simulation pure dans `src/sim.ts`, réglages dans `src/config.ts`.
+Vite, TypeScript, Tailwind v4, canvas 2D. Aucun dégradé, police Fredoka auto-hébergée (SIL OFL, `src/fonts/OFL.txt`), aucun CDN, aucune requête réseau. `src/sim.ts` (physique) et `src/world.ts` (piste) sont purs et testés ; `src/draw.ts` dessine tout en aplats.
 
-Accessibilité et sécurité : voir `ACCESSIBILITY.md` et `SECURITY-AUDIT.md`.
+Déploiement : `Dockerfile` (build Node puis nginx, port 80, en-têtes de sécurité dans `security-headers.inc`).
 
 ## Licence
 
-MIT.
+MIT. Voir `LICENSE`.

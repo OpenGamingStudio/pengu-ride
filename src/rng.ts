@@ -1,7 +1,5 @@
-// Générateur pseudo-aléatoire à graine (mulberry32) : une partie rejouée avec la même graine est identique.
-export type Rng = () => number;
-
-export function makeRng(seed: number): Rng {
+/** Générateur déterministe (mulberry32) : un même départ donne toujours la même piste. */
+export function rng(seed: number): () => number {
   let a = seed >>> 0;
   return () => {
     a = (a + 0x6d2b79f5) >>> 0;

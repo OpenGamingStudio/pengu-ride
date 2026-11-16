@@ -1,364 +1,416 @@
 import './style.css';
-import { Sound } from './audio';
-import { BIOMES, biomeIndexAt } from './biomes';
-import { computeScale, draw, palette, pengu, type Fx, type View } from './render';
-import { buy, load, store, type Save } from './save';
-import { distM, newGame, step, type Cause, type Game } from './sim';
-import { SKINS, skinById } from './skins';
+import { ANCHOR_Y, GRAVITY, STEP } from './config';
+import { setSound, sfx } from './audio';
+import {
+  COL, drawBackdrop, drawBand, drawGround, drawPenguin, drawRing, drawWorld, INK, paintIcon, type Outfit,
+} from './draw';
+import { freshSave, load, write, type Loaded } from './save';
+import { nextAffordable } from './shop';
+import { distance, earned, launch, launchSpeed, newSim, predictBounce, step, tap, window_, type Sim } from './sim';
+import { el, resultPanel, shopPanel, tutoPanel } from './ui';
 
-const $ = <T extends HTMLElement>(id: string): T => {
-  const el = document.getElementById(id);
-  if (!el) throw new Error(`#${id} manquant`);
-  return el as T;
-};
+const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
+const cv = $<HTMLCanvasElement>('game');
+const g = cv.getContext('2d')!;
+const layer = $('layer');
 
-type Mode = 'menu' | 'shop' | 'play' | 'pause' | 'over';
-const canvas = $<HTMLCanvasElement>('stage');
-const ctx = canvas.getContext('2d') as CanvasRenderingContext2D;
-const sound = new Sound();
-const save: Save = load();
-sound.on = save.sound;
-const motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
-let mode: Mode = 'menu';
-let prevMode: Mode = 'menu'; // d'où l'on est venu dans la boutique
-let game: Game = newGame(1);
-let seed = (Date.now() & 0xffff) + 1;
-let lean = 0;
-let jumpQueued = false;
-let holdTimer = 0;
-const keys = new Set<string>();
-const fx: Fx[] = [];
+let store: Storage | null = null;
+try {
+  store = window.localStorage;
+} catch {
+  store = null;
+}
+const saved: Loaded = load(store);
+const save = saved.data ?? freshSave();
+const persist = () => write(store, saved);
+setSound(save.settings.sound);
+
+const reduced = window.matchMedia('(prefers-reduced-motion: reduce)');
+
+// ---- état de partie ---------------------------------------------------------------------------------
+interface Particle { x: number; y: number; vx: number; vy: number; life: number; max: number; col: string; r: number }
+interface Floater { x: number; y: number; text: string; life: number; col: string }
+let sim: Sim = newSim(1, save.up);
+let particles: Particle[] = [];
+let floaters: Floater[] = [];
 let shake = 0;
-let shownBiome = 0;
-let fromBiome = 0;
-let blend = 1;
-let lastFishAnnounce = 0;
-let lastMilestone = 0;
+let camX = 0;
+let camY = 0;
+let paused = false;
+let aim: { sx: number; sy: number; angle: number; power: number; id: number } | null = null;
+let acc = 0;
+let last = 0;
+let resultTimer = 0;
 
-const reduced = () => save.reduced || motionQuery.matches;
-const view: View = { w: 0, h: 0, scale: 1, reduced: false, pal: BIOMES[0], skin: skinById(save.equipped), fx, shake: 0 };
+let W = 0;
+let H = 0;
+let dpr = 1;
+let scale = 1;
+let groundY = 0;
 
 function resize(): void {
-  const dpr = Math.min(2, window.devicePixelRatio || 1);
-  view.w = canvas.width = Math.round(canvas.clientWidth * dpr);
-  view.h = canvas.height = Math.round(canvas.clientHeight * dpr);
-  view.scale = computeScale(view.w, view.h);
+  dpr = Math.min(window.devicePixelRatio || 1, 2);
+  W = window.innerWidth;
+  H = window.innerHeight;
+  cv.width = Math.round(W * dpr);
+  cv.height = Math.round(H * dpr);
+  scale = Math.min(H / 560, W / 420);
+  groundY = H * (W > H ? 0.8 : 0.74);
 }
 window.addEventListener('resize', resize);
-window.addEventListener('orientationchange', resize);
+resize();
 
-function live(msg: string): void {
-  $('live').textContent = msg;
+const outfit = (): Outfit => ({ ...save.equipped });
+
+// ---- HUD --------------------------------------------------------------------------------------------
+function paintStatic(): void {
+  paintIcon($('fish-ico') as HTMLCanvasElement, 'fish', 'fish', 28);
+  paintIcon($('shop-ico') as HTMLCanvasElement, 'fish', 'fish', 20);
+  const s = $('snd-ico') as HTMLCanvasElement;
+  const c = s.getContext('2d')!;
+  s.width = s.height = 56;
+  c.clearRect(0, 0, 56, 56);
+  c.lineWidth = 5; c.lineCap = 'round'; c.lineJoin = 'round'; c.strokeStyle = INK; c.fillStyle = INK;
+  c.beginPath(); c.moveTo(8, 21); c.lineTo(18, 21); c.lineTo(30, 10); c.lineTo(30, 46); c.lineTo(18, 35); c.lineTo(8, 35); c.closePath(); c.fill();
+  if (save.settings.sound) {
+    c.beginPath(); c.arc(32, 28, 10, -0.9, 0.9); c.stroke();
+    c.beginPath(); c.arc(32, 28, 19, -0.9, 0.9); c.stroke();
+  } else {
+    c.strokeStyle = COL.band;
+    c.beginPath(); c.moveTo(38, 19); c.lineTo(52, 37); c.moveTo(52, 19); c.lineTo(38, 37); c.stroke();
+  }
+  $('b-sound').setAttribute('aria-pressed', String(save.settings.sound));
 }
 
-function setMode(m: Mode): void {
-  mode = m;
-  const show = (id: string, on: boolean) => ($(id).hidden = !on);
-  show('menu', m === 'menu');
-  show('shop', m === 'shop');
-  show('hud', m === 'play' || m === 'pause');
-  show('pause', m === 'pause');
-  show('over', m === 'over');
-  $('hint-box').hidden = true;
-  const focusId = { menu: 'menu-title', shop: 'shop-title', pause: 'pause-title', over: 'over-title', play: '' }[m];
-  if (focusId) $(focusId).focus({ preventScroll: true });
-  if (m === 'menu') refreshMenu();
-  if (m === 'shop') renderShop();
+function refreshHud(): void {
+  $('fish-n').textContent = String(earned(sim));
+  $('dist').textContent = distance(sim) + ' m';
+  $('rec').textContent = 'Record : ' + save.best + ' m';
+  $('shop-n').textContent = String(save.coins);
+  $('shop-dot').classList.toggle('hidden', nextAffordable(save) === null);
 }
 
-function refreshMenu(): void {
-  $('menu-best').textContent = String(save.best);
-  $('menu-fish').textContent = String(save.fish);
-  const s = $('btn-sound');
-  s.textContent = `Sons : ${save.sound ? 'oui' : 'non'}`;
-  s.setAttribute('aria-pressed', String(save.sound));
-  const m = $('btn-motion');
-  m.textContent = `Mouvements réduits : ${save.reduced ? 'oui' : 'non'}`;
-  m.setAttribute('aria-pressed', String(save.reduced));
-  document.documentElement.classList.toggle('rm', reduced());
+function setDock(visible: boolean): void {
+  $('dock').classList.toggle('hidden', !visible);
 }
 
-function startGame(): void {
-  seed = (seed * 1103515245 + 12345) >>> 0;
-  game = newGame(seed);
-  fx.length = 0;
-  lean = 0;
-  jumpQueued = false;
-  shownBiome = fromBiome = 0;
-  blend = 1;
-  lastFishAnnounce = 0;
-  lastMilestone = 0;
-  view.skin = skinById(save.equipped);
-  $('hud-dist').textContent = '0';
-  $('hud-fish').textContent = '0';
-  $('hud-biome').textContent = BIOMES[0].name;
-  setMode('play');
-  $('hint-box').hidden = false;
-  window.setTimeout(() => ($('hint-box').hidden = true), 3500);
-  live('C\'est parti ! Touche pour sauter, maintiens pour foncer.');
+// ---- panneaux ---------------------------------------------------------------------------------------
+function openLayer(node: HTMLElement): void {
+  layer.replaceChildren(node);
+  layer.classList.remove('hidden');
+  layer.classList.add('flex');
+  paused = true;
+  const f = node.querySelector<HTMLElement>('button');
+  (node.querySelector<HTMLElement>('.btn-main') ?? f)?.focus();
 }
-
-const CAUSE: Record<Cause, string> = { rock: 'Tu as heurté un rocher.', seal: 'Un phoque t\'a arrêté.', hole: 'Tu es tombé dans un trou.' };
-
-function endGame(): void {
-  const d = distM(game.x);
-  const record = d > save.best;
-  if (record) save.best = d;
-  save.fish += game.fish;
-  store(save);
-  $('over-cause').textContent = game.over ? CAUSE[game.over] : '';
-  $('over-dist').textContent = String(d);
-  $('over-fish').textContent = String(game.fish);
-  $('over-record').textContent = record ? 'Nouveau record !' : `Record : ${save.best} m`;
-  setMode('over');
-  live(`Fin de partie. ${d} mètres, ${game.fish} poissons. ${CAUSE[game.over ?? 'rock']}`);
-}
-
-function pauseGame(): void {
-  if (mode !== 'play') return;
-  setMode('pause');
-  live('Pause');
-}
-function resumeGame(): void {
-  if (mode !== 'pause') return;
-  setMode('play');
+function closeLayer(): void {
+  layer.replaceChildren();
+  layer.classList.add('hidden');
+  layer.classList.remove('flex');
+  paused = false;
   last = performance.now();
 }
 
-// --- boutique ---
-function renderShop(): void {
-  $('shop-fish').textContent = String(save.fish);
-  const list = $('shop-list');
-  list.replaceChildren();
-  for (const sk of SKINS) {
-    const owned = save.owned.includes(sk.id);
-    const on = save.equipped === sk.id;
-    const li = document.createElement('li');
-    const card = document.createElement('div');
-    card.className = `card${on ? ' on' : ''}`;
-    const cv = document.createElement('canvas');
-    cv.width = 160;
-    cv.height = 100;
-    cv.className = 'h-20 w-32';
-    cv.setAttribute('aria-hidden', 'true');
-    const c = cv.getContext('2d');
-    if (c) {
-      c.fillStyle = '#cdeeff';
-      c.fillRect(0, 0, 160, 100);
-      c.fillStyle = '#f4fbff';
-      c.fillRect(0, 76, 160, 24);
-      c.translate(70, 78);
-      c.scale(1.3, 1.3);
-      pengu(c, { vy: 0, lean: 0, grounded: true, t: 0, speed: 0 }, sk, true);
-    }
-    const name = document.createElement('p');
-    name.className = 'text-lg font-bold leading-tight';
-    name.textContent = sk.name;
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'btn btn-sun w-full text-base';
-    if (on) {
-      btn.textContent = 'Équipé';
-      btn.disabled = true;
-      btn.setAttribute('aria-label', `${sk.name} : équipé`);
-    } else if (owned) {
-      btn.textContent = 'Équiper';
-      btn.className = 'btn btn-sky w-full text-base';
-      btn.setAttribute('aria-label', `Équiper ${sk.name}`);
-      btn.addEventListener('click', () => {
-        save.equipped = sk.id;
-        store(save);
-        sound.click();
-        renderShop();
-        $(`skin-${sk.id}`)?.focus();
-      });
-    } else {
-      btn.textContent = `Acheter ${sk.price} poissons`;
-      btn.setAttribute('aria-label', `Acheter ${sk.name} pour ${sk.price} poissons`);
-      btn.disabled = save.fish < sk.price;
-      btn.addEventListener('click', () => {
-        const next = buy(save, sk.id);
-        if (!next) return;
-        Object.assign(save, next);
-        store(save);
-        sound.buy();
-        live(`${sk.name} acheté et équipé.`);
-        renderShop();
-        $(`skin-${sk.id}`)?.focus();
-      });
-    }
-    btn.id = `skin-${sk.id}`;
-    card.append(cv, name, btn);
-    li.append(card);
-    list.append(li);
-  }
+function openTuto(): void {
+  openLayer(tutoPanel(() => {
+    save.tutoSeen = true;
+    persist();
+    closeLayer();
+  }));
 }
 
-// --- entrées ---
-let downAt = 0;
-let downX = 0;
-canvas.addEventListener('pointerdown', (e) => {
-  if (mode !== 'play') return;
-  e.preventDefault();
-  sound.unlock();
-  canvas.setPointerCapture(e.pointerId);
-  downAt = performance.now();
-  downX = e.clientX;
-  jumpQueued = true;
-  window.clearTimeout(holdTimer);
-  holdTimer = window.setTimeout(() => (lean = Math.max(lean, 1)), 160);
+function openShop(): void {
+  openLayer(shopPanel(save, () => { persist(); refreshHud(); }, () => {
+    closeLayer();
+    refreshHud();
+    if (sim.phase === 'over') startAim();
+  }));
+}
+
+function showResult(): void {
+  const gained = earned(sim);
+  const dist = distance(sim);
+  const record = dist > save.best;
+  if (record) save.best = dist;
+  save.coins += gained;
+  save.totalFish += gained;
+  save.games++;
+  persist();
+  refreshHud();
+  openLayer(resultPanel(
+    { dist, fish: sim.fish, gold: sim.gold, perfects: sim.perfects, record, best: save.best, coins: save.coins },
+    save,
+    () => { closeLayer(); startAim(); },
+    () => { openShop(); },
+  ));
+}
+
+function startAim(): void {
+  sim = newSim((Math.random() * 2 ** 31) | 0, save.up);
+  particles = [];
+  floaters = [];
+  aim = null;
+  setDock(true);
+  $('hint').classList.remove('hidden');
+  refreshHud();
+}
+
+// ---- entrées ----------------------------------------------------------------------------------------
+const MAX_PULL = 120;
+
+function aimFrom(sx: number, sy: number, x: number, y: number): { angle: number; power: number } {
+  const px = sx - x;
+  const py = y - sy;
+  const len = Math.hypot(px, py);
+  const angle = Math.max(0.12, Math.min(1.4, Math.atan2(py, px)));
+  return { angle, power: Math.min(1, len / MAX_PULL) };
+}
+
+cv.addEventListener('pointerdown', (e) => {
+  sfx.unlock();
+  if (paused) return;
+  if (sim.phase === 'aim') {
+    cv.setPointerCapture(e.pointerId);
+    aim = { sx: e.clientX, sy: e.clientY, angle: 0.8, power: 0, id: e.pointerId };
+    $('hint').classList.add('invisible');
+  } else if (sim.phase === 'fly') {
+    tap(sim);
+  }
 });
-canvas.addEventListener('pointermove', (e) => {
-  if (mode !== 'play' || !downAt) return;
-  const dx = e.clientX - downX;
-  if (dx < -24) {
-    window.clearTimeout(holdTimer);
-    lean = -1;
-  } else if (dx > 24) lean = 1;
+cv.addEventListener('pointermove', (e) => {
+  if (!aim || e.pointerId !== aim.id) return;
+  const a = aimFrom(aim.sx, aim.sy, e.clientX, e.clientY);
+  aim.angle = a.angle;
+  aim.power = a.power;
 });
-const release = () => {
-  window.clearTimeout(holdTimer);
-  downAt = 0;
-  lean = 0;
+const release = (e: PointerEvent) => {
+  if (!aim || e.pointerId !== aim.id) return;
+  const a = aim;
+  aim = null;
+  $('hint').classList.remove('invisible');
+  if (e.type === 'pointerup' && a.power >= 0.15 && sim.phase === 'aim') doLaunch(a.angle, a.power);
 };
-canvas.addEventListener('pointerup', release);
-canvas.addEventListener('pointercancel', release);
-canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+cv.addEventListener('pointerup', release);
+cv.addEventListener('pointercancel', release);
+cv.addEventListener('contextmenu', (e) => e.preventDefault());
 
-window.addEventListener('keydown', (e) => {
-  if (e.repeat && ['Space', 'ArrowUp', 'KeyW'].includes(e.code)) return;
-  if (mode === 'play') {
-    if (['Space', 'ArrowUp', 'KeyW'].includes(e.code)) {
-      e.preventDefault();
-      sound.unlock();
-      jumpQueued = true;
-    } else if (['ArrowLeft', 'ArrowRight', 'ArrowDown', 'KeyA', 'KeyD', 'KeyS'].includes(e.code)) {
-      e.preventDefault();
-      keys.add(e.code);
-    } else if (e.code === 'Escape' || e.code === 'KeyP') pauseGame();
-  } else if (mode === 'pause' && (e.code === 'Escape' || e.code === 'KeyP')) resumeGame();
-  if (e.code === 'KeyM' && (mode === 'play' || mode === 'pause')) toggleSound();
+function doLaunch(angle: number, power: number): void {
+  launch(sim, angle, Math.max(0.35, power));
+  $('hint').classList.add('hidden');
+  setDock(false);
+}
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !layer.classList.contains('hidden')) {
+    if (sim.phase === 'over' && layer.querySelector('[aria-label="Résultat de la partie"]')) return;
+    if (layer.querySelector('[aria-label="Boutique"]')) { closeLayer(); refreshHud(); if (sim.phase === 'over') startAim(); return; }
+    if (layer.querySelector('[aria-label="Comment jouer"]')) { save.tutoSeen = true; persist(); closeLayer(); }
+    return;
+  }
+  const a = document.activeElement;
+  if (a && a !== document.body && a !== cv) return;
+  if (paused) return;
+  if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'Enter') {
+    e.preventDefault();
+    if (e.repeat) return;
+    if (sim.phase === 'aim') doLaunch(0.85, 0.9);
+    else if (sim.phase === 'fly') tap(sim);
+  }
 });
-window.addEventListener('keyup', (e) => keys.delete(e.code));
-window.addEventListener('blur', () => { keys.clear(); release(); pauseGame(); });
-document.addEventListener('visibilitychange', () => { if (document.hidden) pauseGame(); });
 
-function keyLean(): number {
-  const back = keys.has('ArrowLeft') || keys.has('KeyA');
-  const fwd = keys.has('ArrowRight') || keys.has('ArrowDown') || keys.has('KeyD') || keys.has('KeyS');
-  return back ? -1 : fwd ? 1 : 0;
+$('b-help').addEventListener('click', openTuto);
+$('b-shop').addEventListener('click', openShop);
+$('b-sound').addEventListener('click', () => {
+  save.settings.sound = !save.settings.sound;
+  setSound(save.settings.sound);
+  persist();
+  paintStatic();
+  sfx.unlock();
+});
+
+// ---- événements du jeu : sons, particules -----------------------------------------------------------
+function burst(x: number, y: number, n: number, col: string, power = 160): void {
+  const count = reduced.matches ? Math.ceil(n / 3) : n;
+  for (let i = 0; i < count; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const v = power * (0.4 + Math.random() * 0.6);
+    particles.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v + 60, life: 0.5, max: 0.5, col, r: 3 + Math.random() * 3 });
+  }
 }
 
-function toggleSound(): void {
-  save.sound = !save.sound;
-  sound.on = save.sound;
-  store(save);
-  sound.unlock();
-  sound.click();
-  refreshMenu();
-  live(save.sound ? 'Sons activés' : 'Sons coupés');
-}
-
-$('btn-play').addEventListener('click', () => { sound.unlock(); sound.click(); startGame(); });
-$('btn-shop').addEventListener('click', () => { sound.unlock(); sound.click(); prevMode = 'menu'; setMode('shop'); });
-$('btn-over-shop').addEventListener('click', () => { sound.click(); prevMode = 'over'; setMode('shop'); });
-$('btn-shop-back').addEventListener('click', () => { sound.click(); setMode(prevMode === 'over' ? 'over' : 'menu'); });
-$('btn-sound').addEventListener('click', toggleSound);
-$('btn-motion').addEventListener('click', () => { save.reduced = !save.reduced; store(save); sound.unlock(); sound.click(); refreshMenu(); });
-$('btn-pause').addEventListener('click', () => { sound.click(); pauseGame(); });
-$('btn-resume').addEventListener('click', () => { sound.click(); resumeGame(); });
-$('btn-pause-menu').addEventListener('click', () => { sound.click(); endRun(); });
-$('btn-retry').addEventListener('click', () => { sound.click(); startGame(); });
-$('btn-over-menu').addEventListener('click', () => { sound.click(); setMode('menu'); });
-motionQuery.addEventListener('change', refreshMenu);
-
-/** Quitter en cours de partie : les poissons ramassés sont gardés. */
-function endRun(): void {
-  save.fish += game.fish;
-  const d = distM(game.x);
-  if (d > save.best) save.best = d;
-  store(save);
-  setMode('menu');
-}
-
-// --- boucle ---
-let last = performance.now();
-let acc = 0;
-const DT = 1 / 60;
-
-function burst(x: number, n: number, c: string, up: number): void {
-  if (reduced()) return;
-  for (let i = 0; i < n; i++) fx.push({ x: x - 20 + Math.random() * 10, y: 2, vx: -60 - Math.random() * 120, vy: up * (0.3 + Math.random()), life: 0.5, c, r: 2 + Math.random() * 2 });
-}
-
-function frame(now: number): void {
-  const dt = Math.min(0.1, (now - last) / 1000);
-  last = now;
-  if (mode === 'play') {
-    acc += dt;
-    while (acc >= DT && mode === 'play') {
-      acc -= DT;
-      const l = keyLean() || lean;
-      step(game, DT, { jump: jumpQueued, lean: l });
-      jumpQueued = false;
-      handle();
+function handleEvents(): void {
+  for (const ev of sim.events) {
+    if (ev.type === 'launch') sfx.launch();
+    else if (ev.type === 'bounce') {
+      if (ev.kind === 'ice') sfx.thud();
+      else if (ev.perfect) {
+        sfx.perfect();
+        burst(ev.x, ev.y + 10, 16, COL.sun, 240);
+        floaters.push({ x: ev.x, y: ev.y + 60, text: 'Parfait !', life: 1, col: COL.sun });
+        if (!reduced.matches) shake = 0.18;
+      } else {
+        sfx.boing();
+        burst(ev.x, ev.y + 6, 7, '#FFFFFF', 140);
+      }
+    } else if (ev.type === 'late') {
+      sfx.perfect();
+      burst(ev.x, ev.y, 14, COL.sun, 240);
+      floaters.push({ x: ev.x, y: ev.y + 60, text: 'Bien joué !', life: 1, col: COL.sun });
+    } else if (ev.type === 'fish') {
+      if (ev.gold) { sfx.gold(); floaters.push({ x: ev.x, y: ev.y + 30, text: '+5', life: 0.8, col: COL.gold }); }
+      else sfx.fish();
+      burst(ev.x, ev.y, 4, ev.gold ? COL.gold : COL.fish, 90);
+    } else if (ev.type === 'splash') {
+      sfx.splash();
+      burst(ev.x, ev.y + 4, 14, COL.water, 200);
+    } else if (ev.type === 'over') {
+      resultTimer = window.setTimeout(showResult, 900);
     }
   }
-  for (const f of fx) {
-    f.x += f.vx * dt;
-    f.y += f.vy * dt;
-    f.vy -= 500 * dt;
-    f.life -= dt;
-  }
-  for (let i = fx.length - 1; i >= 0; i--) if (fx[i].life <= 0) fx.splice(i, 1);
-  shake = Math.max(0, shake - dt * 2.5);
-  if (blend < 1) blend = reduced() ? 1 : Math.min(1, blend + dt / 0.9);
-  view.pal = palette(fromBiome, shownBiome, blend);
-  view.reduced = reduced();
-  view.shake = shake;
-  draw(ctx, game, view);
+  sim.events.length = 0;
+}
+
+// ---- boucle -----------------------------------------------------------------------------------------
+function frame(now: number): void {
   requestAnimationFrame(frame);
+  const dt = Math.min(0.05, (now - last) / 1000);
+  last = now;
+  if (!paused) {
+    acc += dt;
+    while (acc >= STEP) {
+      step(sim);
+      acc -= STEP;
+      if (sim.events.length) handleEvents();
+    }
+  } else acc = 0;
+  update(dt);
+  render(now / 1000);
 }
 
-function handle(): void {
-  for (const ev of game.events) {
-    if (ev === 'jump') { sound.jump(); burst(game.x, 5, '#ffffff', 160); }
-    else if (ev === 'land') { sound.land(); burst(game.x, 4, '#ffffff', 90); }
-    else if (ev === 'fish') sound.fish();
-    else if (ev === 'boost') { sound.boost(); live('Glace turbo !'); }
-    else if (ev === 'hit') { sound.hit(); shake = 1; burst(game.x, 12, '#14213d', 260); }
+function update(dt: number): void {
+  const viewW = W / scale;
+  const targetX = sim.phase === 'aim' ? -viewW * 0.26 : Math.max(-viewW * 0.26, sim.x - viewW * 0.26);
+  camX += (targetX - camX) * Math.min(1, dt * (sim.phase === 'aim' ? 8 : 7));
+  const hs = (groundY - H * 0.28) / scale;
+  const targetY = Math.max(0, sim.y - hs);
+  camY += (targetY - camY) * Math.min(1, dt * 4);
+  for (const p of particles) {
+    p.life -= dt;
+    p.vy -= GRAVITY * 0.5 * dt;
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
   }
-  if (game.t * 60 % 6 < 1 && game.grounded && game.speed > 0 && !reduced()) burst(game.x, 1, '#ffffff', 40);
-  $('hud-dist').textContent = String(distM(game.x));
-  $('hud-fish').textContent = String(game.fish);
-  const b = biomeIndexAt(game.x);
-  if (b !== shownBiome) {
-    fromBiome = shownBiome;
-    shownBiome = b;
-    blend = 0;
-    $('hud-biome').textContent = BIOMES[b].name;
-    banner(BIOMES[b].name);
-    sound.biome();
-    live(`Nouvelle zone : ${BIOMES[b].name}`);
+  particles = particles.filter((p) => p.life > 0);
+  for (const f of floaters) { f.life -= dt; f.y += 40 * dt; }
+  floaters = floaters.filter((f) => f.life > 0);
+  shake = Math.max(0, shake - dt);
+  if (sim.phase === 'fly') {
+    $('fish-n').textContent = String(earned(sim));
+    $('dist').textContent = distance(sim) + ' m';
   }
-  const m = Math.floor(distM(game.x) / 100);
-  if (m > lastMilestone && m % 2 === 0) { lastMilestone = m; live(`${m * 100} mètres`); }
-  if (game.fish - lastFishAnnounce >= 10) { lastFishAnnounce = game.fish; live(`${game.fish} poissons`); }
-  if (game.over) endGame();
 }
 
-function banner(text: string): void {
-  const el = $('banner');
-  el.replaceChildren();
-  const p = document.createElement('p');
-  p.className = 'banner panel px-6 py-2 text-3xl font-bold';
-  p.textContent = text;
-  el.append(p);
-  el.hidden = false;
-  window.setTimeout(() => (el.hidden = true), 1800);
+function render(t: number): void {
+  const c = g;
+  c.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const gy = groundY + camY * scale;
+  c.save();
+  if (shake > 0) c.translate((Math.random() - 0.5) * 8 * shake * 5, (Math.random() - 0.5) * 8 * shake * 5);
+  drawBackdrop(c, W, H, gy, camX, camY, scale);
+  drawGround(c, W, H, gy, camX, scale);
+  c.save();
+  c.translate(-camX * scale, gy);
+  c.scale(scale, -scale);
+  c.lineJoin = 'round';
+  const viewW = W / scale;
+  drawWorld(c, sim.world, camX, viewW, sim.t, { sling: true });
+
+  if (sim.phase === 'aim') drawAim(c);
+  else drawFlight(c, t);
+
+  for (const p of particles) {
+    c.globalAlpha = Math.max(0, p.life / p.max);
+    c.beginPath();
+    c.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+    c.fillStyle = p.col;
+    c.fill();
+  }
+  c.globalAlpha = 1;
+  c.restore();
+
+  for (const f of floaters) {
+    const sx = (f.x - camX) * scale;
+    const sy = gy - f.y * scale;
+    c.globalAlpha = Math.min(1, f.life * 2);
+    c.font = '700 ' + Math.round(26 * Math.max(scale, 0.8)) + 'px Fredoka, sans-serif';
+    c.textAlign = 'center';
+    c.lineWidth = 6;
+    c.strokeStyle = INK;
+    c.lineJoin = 'round';
+    c.strokeText(f.text, sx, sy);
+    c.fillStyle = f.col;
+    c.fillText(f.text, sx, sy);
+  }
+  c.globalAlpha = 1;
+  c.restore();
 }
 
-resize();
-setMode('menu');
+function drawAim(c: CanvasRenderingContext2D): void {
+  const a = aim ?? { angle: 0.85, power: 0 };
+  const pull = a.power;
+  // le pingouin recule dans la fronde, à l'opposé du tir
+  const px = -Math.cos(a.angle) * pull * 46;
+  const py = ANCHOR_Y - Math.sin(a.angle) * pull * 46;
+  // le dessin du pingouin est en y vers le bas
+  drawBand(c, px, py);
+  c.save();
+  c.translate(px, py);
+  c.scale(1, -1);
+  c.scale(1, 1);
+  drawPenguin(c, outfit(), -a.angle, pull > 0.05 ? 1 : 0);
+  c.restore();
+  if (pull > 0.1) {
+    const sp = launchSpeed(Math.max(0.35, pull), save.up.power);
+    const vx = Math.cos(a.angle) * sp;
+    const vy = Math.sin(a.angle) * sp;
+    for (let i = 1; i <= 14; i++) {
+      const tt = i * 0.07;
+      const x = vx * tt;
+      const y = ANCHOR_Y + vy * tt - 0.5 * GRAVITY * tt * tt;
+      if (y < 4) break;
+      c.beginPath();
+      c.arc(x, y, Math.max(2.5, 7 - i * 0.3), 0, Math.PI * 2);
+      c.fillStyle = '#FFFFFF';
+      c.fill();
+      c.lineWidth = 2;
+      c.strokeStyle = INK;
+      c.stroke();
+    }
+  }
+}
+
+function drawFlight(c: CanvasRenderingContext2D, t: number): void {
+  if (sim.phase === 'fly' && !sim.grounded) {
+    const p = predictBounce(sim);
+    if (p && p.t < 0.7) {
+      const ready = p.t < window_(save.up.bounce);
+      drawRing(c, p.x, p.y + (p.kind === 'seal' ? 24 : 40), p.t / 0.7, ready);
+    }
+  }
+  const rot = sim.grounded ? 0 : -Math.max(-0.9, Math.min(0.9, Math.atan2(sim.vy, sim.vx) * 0.8));
+  c.save();
+  c.translate(sim.x, sim.y + 20);
+  c.scale(1, -1);
+  c.scale(1, 1);
+  drawPenguin(c, outfit(), rot, 0, t * 3);
+  c.restore();
+}
+
+// ---- démarrage --------------------------------------------------------------------------------------
+paintStatic();
+refreshHud();
+if (!saved.persistent) $('hint').textContent = 'Tire en arrière, puis lâche ! (progression non sauvegardée)';
+last = performance.now();
 requestAnimationFrame(frame);
-
+if (!save.tutoSeen) openTuto();
+window.addEventListener('pagehide', () => window.clearTimeout(resultTimer));

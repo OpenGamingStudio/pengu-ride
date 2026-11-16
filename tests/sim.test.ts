@@ -1,89 +1,125 @@
 import { describe, expect, it } from 'vitest';
-import { newGame, step, inHole, distM, type Game } from '../src/sim';
-import { biomeIndexAt } from '../src/biomes';
-import { parseSave, buy, defaults } from '../src/save';
-import { SKINS } from '../src/skins';
+import { distance, earned, launch, newSim, predictBounce, step, tap, type Sim } from '../src/sim';
+import { generate, newWorld, obstacleAt, surface } from '../src/world';
 
-const DT = 1 / 60;
+const up = () => ({ power: 0, bounce: 0, magnet: 0 });
 
-/** Robot : saute au bon moment devant chaque danger. */
-function bot(g: Game): boolean {
-  let near = Infinity;
-  for (const o of g.objs) {
-    if (o.kind !== 'rock' && o.kind !== 'seal' && o.kind !== 'hole') continue;
-    const d = o.x - g.x;
-    if (d > -o.w / 2 - 10 && d < near) near = d;
-  }
-  return near < g.speed * 0.34 && near > g.speed * 0.2 && g.grounded;
-}
-
-function run(seed: number, seconds: number): Game {
-  const g = newGame(seed);
-  for (let i = 0; i < seconds * 60 && !g.over; i++) step(g, DT, { jump: bot(g), lean: 0 });
-  return g;
-}
-
-describe('simulation', () => {
-  it('est déterministe pour une graine', () => {
-    const a = run(7, 30);
-    const b = run(7, 30);
-    expect(a.x).toBe(b.x);
-    expect(a.fish).toBe(b.fish);
-  });
-
-  it('avance et accélère', () => {
-    const g = newGame(1);
-    for (let i = 0; i < 120; i++) step(g, DT, { jump: false, lean: 1 });
-    expect(g.x).toBeGreaterThan(500);
-  });
-
-  it('un rocher non sauté termine la partie', () => {
-    const g = newGame(3);
-    for (let i = 0; i < 60 * 20 && !g.over; i++) step(g, DT, { jump: false, lean: 0 });
-    expect(g.over).not.toBeNull();
-  });
-
-  it('le robot survit 90 s sur 20 graines (jeu équitable)', () => {
-    for (let s = 1; s <= 20; s++) {
-      const g = run(s, 90);
-      expect(g.over, `graine ${s} à ${distM(g.x)} m`).toBeNull();
+/** Joue une partie : `auto` tape au bon moment grâce à la prédiction. */
+function play(seed: number, angle: number, power: number, auto: boolean, u = up()): Sim {
+  const s = newSim(seed, u);
+  launch(s, angle, power);
+  for (let i = 0; i < 120 * 200 && s.phase === 'fly'; i++) {
+    if (auto) {
+      const p = predictBounce(s);
+      if (p && p.t < 0.1) tap(s);
     }
+    step(s);
+  }
+  return s;
+}
+
+describe('piste', () => {
+  it('est déterministe et triée, sans chevauchement', () => {
+    const a = newWorld(7);
+    const b = newWorld(7);
+    generate(a, 6000);
+    generate(b, 6000);
+    expect(a.items).toEqual(b.items);
+    for (let i = 1; i < a.items.length; i++) expect(a.items[i].x0).toBeGreaterThan(a.items[i - 1].x1);
+    for (let i = 1; i < a.fish.length; i++) expect(a.fish[i].x).toBeGreaterThanOrEqual(a.fish[i - 1].x);
   });
 
-  it('le robot ramasse des poissons', () => {
-    expect(run(2, 60).fish).toBeGreaterThan(5);
+  it('commence par un phoque, les dangers arrivent plus tard et restent rares', () => {
+    const w = newWorld(3);
+    generate(w, 30000);
+    expect(w.items[0].kind).toBe('seal');
+    const pud = w.items.filter((o) => o.kind === 'puddle');
+    expect(pud.length / w.items.length).toBeLessThan(0.2);
+    expect(Math.min(...pud.map((o) => o.x0))).toBeGreaterThan(1500);
   });
 
-  it('un trou fait tomber, un saut le franchit', () => {
-    const g = newGame(1);
-    g.objs = [{ kind: 'hole', x: 600, w: 110, y: 0 }];
-    g.genX = 1e9;
-    for (let i = 0; i < 60 * 6 && !g.over; i++) step(g, DT, { jump: false, lean: 0 });
-    expect(g.over).toBe('hole');
-    expect(inHole(g, 600)).not.toBeNull();
-  });
-
-  it('les biomes s’enchaînent tous les 400 m', () => {
-    expect(biomeIndexAt(0)).toBe(0);
-    expect(biomeIndexAt(401 * 25)).toBe(1);
-    expect(biomeIndexAt(801 * 25)).toBe(2);
-    expect(biomeIndexAt(1201 * 25)).toBe(0);
+  it('surface : plate sur la glace, rampe sur l\'iceberg', () => {
+    const w = newWorld(11);
+    generate(w, 12000);
+    const berg = w.items.find((o) => o.kind === 'berg')!;
+    expect(surface(w, berg.x0 - 5).h).toBe(0);
+    expect(surface(w, berg.x0 + 60).slope).toBeGreaterThan(0.5);
+    expect(surface(w, berg.x1).h).toBe(berg.h);
+    expect(obstacleAt(w, berg.x1 + 1)).toBeNull();
   });
 });
 
-describe('sauvegarde et boutique', () => {
-  it('ignore un contenu abîmé', () => {
-    expect(parseSave('{pas du json')).toEqual(defaults());
-    expect(parseSave(JSON.stringify({ best: -3, fish: 'x', owned: ['zzz'], equipped: 'gold' }))).toEqual(defaults());
+describe('partie', () => {
+  it('le lancer est impossible hors de la visée et la partie se termine', () => {
+    const s = newSim(1, up());
+    step(s);
+    expect(s.x).toBe(0);
+    launch(s, 0.8, 1);
+    expect(s.phase).toBe('fly');
+    for (let i = 0; i < 120 * 200 && s.phase === 'fly'; i++) step(s);
+    expect(s.phase).toBe('over');
   });
-  it('achète seulement avec assez de poissons', () => {
-    const s = { ...defaults(), fish: 40 };
-    expect(buy(s, 'beanie')?.fish).toBe(10);
-    expect(buy(s, 'gold')).toBeNull();
-    expect(buy({ ...s, owned: ['classic', 'beanie'] }, 'beanie')).toBeNull();
+
+  it('parties courtes : moins de 60 s sans taper, 90 s au plus en visant juste', () => {
+    for (const seed of [1, 2, 3, 4, 5, 6]) {
+      const lazy = play(seed, 0.8, 0.9, false);
+      expect(lazy.t).toBeGreaterThan(4);
+      expect(lazy.t).toBeLessThan(60);
+      const pro = play(seed, 0.8, 0.9, true);
+      expect(pro.t).toBeLessThanOrEqual(90);
+      expect(pro.perfects).toBeGreaterThan(0);
+    }
   });
-  it('catalogue : ids uniques, premier skin gratuit', () => {
-    expect(new Set(SKINS.map((k) => k.id)).size).toBe(SKINS.length);
-    expect(SKINS[0].price).toBe(0);
+
+  it('un rebond parfait va plus loin qu\'un rebond raté', () => {
+    let better = 0;
+    for (const seed of [1, 2, 3, 4, 5, 6, 7, 8]) {
+      if (distance(play(seed, 0.8, 0.9, true)) > distance(play(seed, 0.8, 0.9, false))) better++;
+    }
+    expect(better).toBeGreaterThanOrEqual(6);
+  });
+
+  it('les améliorations aident (distance moyenne)', () => {
+    const seeds = [1, 2, 3, 4, 5, 6];
+    const avg = (u: ReturnType<typeof up>) => seeds.reduce((n, sd) => n + distance(play(sd, 0.8, 0.9, true, u)), 0) / seeds.length;
+    expect(avg({ power: 5, bounce: 5, magnet: 0 })).toBeGreaterThan(avg(up()));
+  });
+
+  it('spammer ne sert à rien : un appui verrouille les suivants 0,4 s', () => {
+    const s = newSim(1, up());
+    launch(s, 0.8, 0.9);
+    tap(s);
+    const at = s.tapAt;
+    step(s);
+    tap(s);
+    expect(s.tapAt).toBe(at);
+    for (let i = 0; i < 60; i++) step(s);
+    tap(s);
+    expect(s.tapAt).toBeGreaterThan(at);
+  });
+
+  it('tap un peu tard améliore le rebond', () => {
+    const s = newSim(1, up());
+    launch(s, 0.8, 0.9);
+    let done = false;
+    for (let i = 0; i < 120 * 30 && !done; i++) {
+      step(s);
+      if (s.late) {
+        const vy = s.vy;
+        tap(s);
+        expect(s.vy).toBeGreaterThan(vy);
+        expect(s.perfects).toBe(1);
+        done = true;
+      }
+    }
+    expect(done).toBe(true);
+  });
+
+  it('les poissons se ramassent une seule fois, l\'aimant en attrape plus', () => {
+    const a = play(2, 0.8, 0.9, true);
+    const b = play(2, 0.8, 0.9, true, { power: 0, bounce: 0, magnet: 5 });
+    expect(earned(a)).toBeGreaterThan(0);
+    expect(a.world.fish.filter((f) => f.taken).length).toBe(a.fish + a.gold);
+    expect(earned(b)).toBeGreaterThanOrEqual(earned(a));
   });
 });

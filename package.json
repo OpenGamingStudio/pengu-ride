@@ -2,7 +2,7 @@
   "name": "pengu-ride",
   "version": "1.0.0",
   "private": true,
-  "description": "Pengu Ride : un pingouin glisse sur une pente de glace, jouable dans le navigateur et sur mobile.",
+  "description": "Pengu Ride : un petit pingouin lancé à la fronde glisse et rebondit sur la glace, jouable dans le navigateur et sur mobile.",
   "license": "MIT",
   "type": "module",
   "scripts": {
