@@ -3,7 +3,7 @@ import { MAX_LEVEL } from './config';
 import { paintIcon } from './draw';
 import type { SaveData } from './save';
 import {
-  buy, buyUpgrade, COSMETICS, equip, nextAffordable, SHELVES, UPGRADES, upgradeCost, type Shelf,
+  buy, buyUpgrade, COSMETICS, cheapestUpgrade, equip, SHELVES, UPGRADES, upgradeCost, type Shelf, type UpgradeId,
 } from './shop';
 import { sfx } from './audio';
 
@@ -43,13 +43,16 @@ export interface ResultInfo {
   dist: number;
   fish: number;
   gold: number;
+  /** Poissons gagnés (multiplicateur compris). */
+  gained: number;
   perfects: number;
+  maxCombo: number;
   record: boolean;
   best: number;
   coins: number;
 }
 
-export function resultPanel(r: ResultInfo, save: SaveData, onAgain: () => void, onShop: () => void): HTMLElement {
+export function resultPanel(r: ResultInfo, save: SaveData, onAgain: () => void, onShop: (highlight: UpgradeId | null) => void): HTMLElement {
   const { box, head } = dialog('Glissade finie !', 'Résultat de la partie');
   head.firstElementChild!.className = 'text-3xl font-bold leading-none';
   const body = el('div', 'flex flex-col gap-3 landscape:flex-row landscape:items-center');
@@ -70,22 +73,35 @@ export function resultPanel(r: ResultInfo, save: SaveData, onAgain: () => void, 
     if (extra) l.append(extra);
     stats.append(l);
   };
-  const gained = r.fish + r.gold * 5;
-  li('Poissons ramassés', fishCost(gained));
+  li('Poissons gagnés', fishCost(r.gained));
   if (r.gold) li('Dont poissons dorés', el('b', '', '×' + r.gold));
-  li('Rebonds parfaits', el('b', '', String(r.perfects)));
+  li('Rebonds parfaits', el('b', '', r.perfects + ' (combo max ×' + r.maxCombo + ')'));
   li('Tes poissons en tout', fishCost(r.coins));
   right.append(stats);
-  const tip = nextAffordable(save);
-  if (tip) right.append(el('p', 'rounded-xl bg-sun px-3 py-2 text-center text-base font-semibold', 'Tu peux t\'offrir : ' + tip + ' !'));
+  const next = cheapestUpgrade(save);
+  if (next) {
+    const ok = save.coins >= next.cost;
+    const wrap = el('div', 'rounded-xl border-[3px] border-ink bg-white px-3 py-2');
+    wrap.append(el('p', 'text-center text-base font-semibold', (ok ? 'Tu peux acheter : ' : 'Prochain achat : ') + next.name));
+    const bar = el('div', 'mt-1 h-5 overflow-hidden rounded-full border-[3px] border-ink bg-white');
+    bar.setAttribute('role', 'progressbar');
+    bar.setAttribute('aria-valuemin', '0');
+    bar.setAttribute('aria-valuemax', String(next.cost));
+    bar.setAttribute('aria-valuenow', String(Math.min(save.coins, next.cost)));
+    const fill = el('i', 'block h-full ' + (ok ? 'bg-mint' : 'bg-orange'));
+    fill.style.width = Math.min(100, Math.round((save.coins / next.cost) * 100)) + '%';
+    bar.append(fill);
+    wrap.append(bar, el('p', 'mt-1 text-center text-sm font-semibold', Math.min(save.coins, next.cost) + ' / ' + next.cost + ' poissons'));
+    right.append(wrap);
+  }
   body.append(left, right);
   const actions = el('div', 'mt-4 flex flex-col gap-3 landscape:flex-row landscape:mt-3');
   const again = el('button', 'btn btn-main w-full landscape:flex-[2] landscape:!min-h-14', 'Rejouer');
   again.type = 'button';
   again.addEventListener('click', onAgain);
-  const shop = el('button', 'btn btn-sun w-full landscape:flex-1', 'Boutique');
+  const shop = el('button', 'btn btn-sun w-full landscape:flex-1', next && save.coins >= next.cost ? 'Améliorer !' : 'Boutique');
   shop.type = 'button';
-  shop.addEventListener('click', onShop);
+  shop.addEventListener('click', () => onShop(next && save.coins >= next.cost ? next.id : null));
   actions.append(again, shop);
   box.append(body, actions);
   return box;
@@ -93,7 +109,7 @@ export function resultPanel(r: ResultInfo, save: SaveData, onAgain: () => void, 
 
 type Tab = 'up' | Shelf;
 
-export function shopPanel(save: SaveData, onChange: () => void, onClose: () => void): HTMLElement {
+export function shopPanel(save: SaveData, onChange: () => void, onClose: () => void, highlight: UpgradeId | null = null): HTMLElement {
   const { box, head } = dialog('Boutique', 'Boutique');
   const coins = el('span', 'pill');
   const close = el('button', 'btn btn-ice !px-0 w-12', '×');
@@ -135,7 +151,9 @@ export function shopPanel(save: SaveData, onChange: () => void, onClose: () => v
         }
         const pips = el('span', 'flex gap-1');
         for (let i = 0; i < MAX_LEVEL; i++) pips.append(el('i', 'h-3 w-5 rounded-full border-2 border-ink ' + (i < lvl ? 'bg-orange' : 'bg-white')));
-        list.append(row(icon('upgrade', u.id, 60), u.name, u.desc, btn, pips));
+        const li = row(icon('upgrade', u.id, 60), u.name, u.desc, btn, pips);
+        if (u.id === highlight) { li.classList.add('!bg-sun'); queueMicrotask(() => li.scrollIntoView({ block: 'nearest' })); }
+        list.append(li);
       }
     } else {
       for (const c of COSMETICS.filter((x) => x.shelf === tab)) {
@@ -185,9 +203,9 @@ function row(ic: HTMLElement, name: string, desc: string, action: HTMLElement, e
 
 const STEPS: { icon: Parameters<typeof paintIcon>[1]; id: string; title: string; text: string }[] = [
   { icon: 'sling', id: '', title: 'Tire en arrière', text: 'Pose le doigt n\'importe où, tire vers le bas puis lâche. Plus tu tires, plus le pingouin part fort. Les points montrent le trajet.' },
-  { icon: 'seal', id: '', title: 'Touche au bon moment', text: 'Sur un phoque ou un iceberg, un cercle se resserre. Touche l\'écran juste avant l\'impact : rebond parfait, plus haut et plus loin ! Rater ne coûte rien.' },
+  { icon: 'seal', id: '', title: 'Touche au bon moment', text: 'Sur un phoque ou un iceberg, un cercle se resserre. Touche l\'écran juste avant l\'impact : rebond parfait, plus haut et plus loin ! Un seul lancer par partie : pour aller loin, enchaîne les rebonds parfaits.' },
   { icon: 'fish', id: 'gold', title: 'Ramasse des poissons', text: 'Un poisson vaut 1, un poisson doré vaut 5. C\'est ta monnaie pour la boutique.' },
-  { icon: 'upgrade', id: 'power', title: 'Prépare la prochaine', text: 'À la boutique, améliore ta fronde, tes rebonds et ton aimant, puis habille ton pingouin de bonnets, écharpes et lunettes.' },
+  { icon: 'upgrade', id: 'power', title: 'Prépare la prochaine', text: 'À la boutique, améliore ta fronde, tes patins, tes rebonds, ton aimant et tes gains de poissons, puis habille ton pingouin de bonnets, écharpes et lunettes.' },
 ];
 
 export function tutoPanel(onClose: () => void): HTMLElement {

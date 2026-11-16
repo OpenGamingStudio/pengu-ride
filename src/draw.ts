@@ -210,12 +210,12 @@ export function drawSeal(c: Ctx, squash = 0): void {
 export function drawBerg(c: Ctx, o: Obstacle): void {
   const x0 = o.x0;
   const x1 = o.x1;
-  poly(c, [x0, 0, x0 + BERG_RISE, BERG_H, x1, BERG_H, x1, 0], '#FFFFFF', 3.5);
-  poly(c, [x0 + 70, 0, x0 + BERG_RISE, BERG_H, x1, BERG_H, x1, 0], COL.iceDark, 0);
+  poly(c, [x0, 0, x0 + BERG_RISE, o.h, x1, o.h, x1, 0], '#FFFFFF', 3.5);
+  poly(c, [x0 + 70, 0, x0 + BERG_RISE, o.h, x1, o.h, x1, 0], COL.iceDark, 0);
   c.beginPath();
-  c.moveTo(x0 + 70, 0); c.lineTo(x0 + BERG_RISE, BERG_H); c.lineTo(x1, BERG_H); c.lineTo(x1, 0);
+  c.moveTo(x0 + 70, 0); c.lineTo(x0 + BERG_RISE, o.h); c.lineTo(x1, o.h); c.lineTo(x1, 0);
   c.lineWidth = 3.5; c.strokeStyle = INK; c.stroke();
-  c.beginPath(); c.moveTo(x0, 0); c.lineTo(x0 + BERG_RISE, BERG_H); c.lineTo(x1, BERG_H); c.lineTo(x1, 0);
+  c.beginPath(); c.moveTo(x0, 0); c.lineTo(x0 + BERG_RISE, o.h); c.lineTo(x1, o.h); c.lineTo(x1, 0);
   c.stroke();
 }
 
@@ -414,6 +414,20 @@ function drawUpgradeIcon(c: Ctx, id: UpgradeId): void {
     c.lineWidth = 9; c.strokeStyle = INK; c.stroke();
     c.lineWidth = 4.5; c.strokeStyle = '#FFFFFF'; c.stroke();
     ell(c, 0, -34, 11, 11, COL.seal, 3);
+  } else if (id === 'glide') {
+    c.beginPath();
+    c.moveTo(-30, 30); c.lineTo(30, 30);
+    c.lineWidth = 10; c.strokeStyle = INK; c.stroke();
+    c.lineWidth = 5; c.strokeStyle = '#FFFFFF'; c.stroke();
+    poly(c, [-22, 18, 22, 18, 30, 4, -26, 4], COL.band, 3.5);
+    for (const y of [-10, -22, -34]) {
+      c.beginPath(); c.moveTo(-30, y); c.lineTo(-8, y);
+      c.lineWidth = 6; c.strokeStyle = INK; c.stroke();
+      c.lineWidth = 3; c.strokeStyle = '#FFFFFF'; c.stroke();
+    }
+  } else if (id === 'fishx') {
+    c.save(); c.translate(-8, 4); c.scale(1.5, 1.5); drawFish(c, true, 0); c.restore();
+    poly(c, [14, -34, 20, -22, 34, -20, 24, -10, 27, 4, 14, -3, 1, 4, 4, -10, -6, -20, 8, -22], COL.sun, 3);
   } else {
     c.beginPath();
     c.arc(0, 4, 26, Math.PI, 0);

@@ -7,5 +7,5 @@ export const STEP = 1 / 120;
 export const ANCHOR_Y = 64;
 export const PERFECT_WINDOW = 0.2;
 export const LATE_WINDOW = 0.12;
-export const MAX_LEVEL = 5;
-export const MAX_TIME = 90;
+export const MAX_LEVEL = 8;
+export const MAX_TIME = 300;
