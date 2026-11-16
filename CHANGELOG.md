@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.1.2
+- Correctif boutique : après un achat, la liste garde sa position (plus de retour en haut), le focus reste sur la ligne achetée, petite animation de confirmation ; le changement d'onglet repart en haut.
+
 ## 1.1.1
 - Correctif : plus de vibration du pingouin sur un phoque ou contre un iceberg (seuil de repos : plus de micro-rebonds).
 - Fin de partie lisible : il glisse jusqu'à l'arrêt, étoiles au-dessus de la tête (ou plouf dans une flaque), écran de résultat en 1,2 s.
