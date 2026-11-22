@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.2.0 — 2026-11-22 (compte)
+- **Compte OpenGamingStudio (facultatif)** : connexion pseudo + code, Google ou Discord, et sauvegarde de la progression sur tous les appareils (`account.js`, service api.opengamingstudio.com ; CSP `connect-src` limitée à ce domaine). Le jeu reste jouable sans compte.
+
 ## 1.1.2
 - Correctif boutique : après un achat, la liste garde sa position (plus de retour en haut), le focus reste sur la ligne achetée, petite animation de confirmation ; le changement d'onglet repart en haut.
 

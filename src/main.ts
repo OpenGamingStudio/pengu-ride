@@ -1,10 +1,10 @@
 import './style.css';
-import { ANCHOR_Y, GRAVITY, STEP } from './config';
+import { ANCHOR_Y, GRAVITY, STEP, VERSION } from './config';
 import { setSound, sfx } from './audio';
 import {
   COL, drawBackdrop, drawBand, drawGround, drawPenguin, drawRing, drawWorld, INK, paintIcon, type Outfit,
 } from './draw';
-import { freshSave, load, write, type Loaded } from './save';
+import { freshSave, load, sanitize, write, type Loaded } from './save';
 import { nextAffordable, type UpgradeId } from './shop';
 import { distance, earned, launch, launchSpeed, newSim, predictBounce, step, tap, window_, type Sim } from './sim';
 import { el, resultPanel, shopPanel, tutoPanel } from './ui';
@@ -486,3 +486,18 @@ last = performance.now();
 requestAnimationFrame(frame);
 if (!save.tutoSeen) openTuto();
 window.addEventListener('pagehide', () => window.clearTimeout(resultTimer));
+
+// ---- compte OpenGamingStudio (facultatif) : progression sur tous les appareils -----------------------
+declare global { interface Window { OGSAccount?: { init(c: Record<string, unknown>): void; show(on: boolean): void } } }
+window.OGSAccount?.init({
+  game: 'pengu-ride', version: VERSION, color: '#5EC6F5', anchor: 'bottom-left', offset: [8, 8],
+  getSave: () => JSON.parse(JSON.stringify(save)),
+  applySave: (d: unknown) => {
+    if (!d || typeof d !== 'object') return;
+    Object.assign(save, sanitize(d as Record<string, unknown>));
+    persist();
+    location.reload();
+  },
+  isEmpty: (d: Record<string, unknown>) => !d || (!d.best && !d.coins && !d.totalFish && !d.games),
+  describe: (d: Record<string, unknown>) => `record ${Number(d.best) || 0} m · ${Number(d.coins) || 0} pièces`,
+});
