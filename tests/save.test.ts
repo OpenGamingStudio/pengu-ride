@@ -116,3 +116,15 @@ describe('boutique', () => {
     expect(cheapestUpgrade(s)).toBeNull();
   });
 });
+
+describe('compte : sanitize d’une sauvegarde reçue', () => {
+  it('rejette les valeurs dangereuses venant du compte', async () => {
+    const { sanitize } = await import('../src/save');
+    const s = sanitize({ best: -5, coins: 'x', totalFish: 1e3, owned: ['nope'], up: { power: 999 } });
+    expect(s.best).toBe(0);
+    expect(s.coins).toBe(0);
+    expect(s.totalFish).toBe(1000);
+    expect(s.owned).not.toContain('nope');
+    expect(s.up.power).toBeLessThanOrEqual(8);
+  });
+});
